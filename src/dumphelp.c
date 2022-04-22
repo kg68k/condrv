@@ -24,6 +24,28 @@
     }               \
   })
 
+typedef struct {
+  const char* from;
+  const char* to;
+} ReplaceChar;
+
+static void replace(char* s) {
+  const ReplaceChar arrows[] = {{"→", "\x80\x1c"},
+                                {"←", "\x80\x1d"},
+                                {"↑", "\x80\x1e"},
+                                {"↓", "\x80\x1f"}};
+  int i;
+
+  for (i = 0; i < sizeof(arrows) / sizeof(arrows[0]); ++i) {
+    char* found = strstr(s, arrows[i].from);
+    if (found != NULL) {
+      const char* rep = arrows[i].to;
+      found[0] = rep[0];
+      found[1] = rep[1];
+    }
+  }
+}
+
 int main(int argc, char* argv[]) {
   char buf[MAXLEN + 1];
 
@@ -41,6 +63,7 @@ int main(int argc, char* argv[]) {
       int in_quote;
 
       buf[len - 1] = '\0';
+      replace(buf);
 
       printf(DC_B "%2d,", len);
       for (in_quote = 0, p = buf; *p; p++) {
