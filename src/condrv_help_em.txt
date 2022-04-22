@@ -1,0 +1,82 @@
+
+			----- Console driver v1.09+14 Help (EMACS mode) -----
+
+  C- : CTRL
+  S- : SHIFT
+  M- : META (ESC, C-[, C-@, XF3)
+  O- : OPT.1 (or OPT.2, SHIFT, CTRL)
+
+@console
+  C-1, O-↓, O-undo	backscroll-last-pointer
+  C-2, O-↑		backscroll-end-of-buffer
+  C-4, C-help		yank
+  C-bs			toggle-buffering-mode
+  C-clr			clear-buffer
+  O-rolldown		shift-window-up
+  O-rollup		shift-window-down
+  O-→			move-window-up
+  O-←			move-window-down
+
+@backscroll
+  help, M-?		help
+  home, undo, clr, C-x k, C-x C-c
+			kill-condrv
+  C-z, C-undo		suspend-condrv
+  C-bs			toggle-buffering-mode
+  C-clr			clear-buffer
+  C-l			redraw-window
+.ifdef __BUF_POS
+  C-x =			cursor-position
+.endif
+
+  C-b, b, ←		backward-char
+  C-f, f, →		forward-char
+  C-p, p, ↑		previous-line
+  C-n, n, ↓		next-line
+  C-a			beginning-of-line
+  C-e			end-of-line
+  M-b			backward-word
+  M-f			forward-word
+  M-<, C-rolldown	beginning-of-buffer
+  M->, C-rollup		end-of-buffer
+  M-v, rolldown		scroll-down
+  C-v, rollup		scroll-up
+
+  C-↑, C-x C-z		shrink-window
+  C-↓, C-x z		grow-window
+  C-←, C-x C-p		move-window-up
+  C-→, C-x C-n		move-window-down
+  M-rolldown		shift-window-up
+  M-rollup		shift-window-down
+
+  C-space, M-space	set-mark
+  M-C-g			goto-mark
+  C-x C-x		exchange-point-and-mark
+  C-w, del		kill-region
+  M-w			copy-region
+  C-y			yank
+  cr			yank-current-word
+  C-k			kill-to-end-of-line
+    k			yank-to-end-of-line
+  C-u			kill-from-beginning-of-line
+    u			yank-from-beginning-of-line
+.ifdef __TAG_JMP
+  S-v			tag-jump
+.endif
+
+  C-s			isearch-forward
+  C-r			isearch-backward
+  C-x C-s, /		search-forward
+  C-x C-r, ?		search-backward
+  M-n			search-forward-next
+  S-n			search-backward-next
+
+  C-x w, C-x C-w	write-file
+  C-x i, C-x C-i	insert-file
+
+  C-x m			toggle-buffer-mode
+  C-x C-m		toggle-text-mode
+  M-i			toggle-tab-disp
+  M-*			toggle-cr-disp
+  tab, >, :, -		toggle-past-header
+
