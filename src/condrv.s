@@ -112,6 +112,14 @@ MPUTYPE:	.equ	$cbc
 
 * Macro --------------------------------------- *
 
+INIT_BUFFER_IF_BROKEN: .macro an
+		movea.l	(backscroll_buf_adr,pc),an
+		cmpi.l	#'hmk*',(an)+
+		beq	@skip
+		bsr	initialize_backscroll_buffer
+@skip:
+		.endm
+
 TopChk:		.macro	areg			;前に戻した場合
 		.local	skip
 		cmpa.l	(buffer_top,a6),areg
@@ -517,7 +525,7 @@ condrv_put_char:
 		move.b	(option_ne_flag,pc),d3~temp
 		bne	putbuf_cansel		;ESCシーケンス中
 putbuf_not_esc:
-		bsr	check_backscroll_buffer
+		INIT_BUFFER_IF_BROKEN a6~buf
 
 		lea	(putbuf_column,pc),a0~column
 		movem.l	(buffer_top,a6~buf),a1~top/a2~old/a3~now/a4~write/a5~end
@@ -1005,9 +1013,8 @@ initialize_keypast_buffer:
 * バックログバッファ初期化 -------------------- *
 
 check_backscroll_buffer:
-		movea.l	(backscroll_buf_adr,pc),a6
-		cmpi.l	#'hmk*',(a6)+
-		beq	check_backscroll_buffer_end
+		INIT_BUFFER_IF_BROKEN a6
+		rts
 
 initialize_backscroll_buffer:
 usereg:		.reg	d0/a5-a6
@@ -1034,7 +1041,6 @@ usereg:		.reg	d0/a5-a6
 		move.b	#WIDTH,(putbuf_column-line_buf,a5)
 
 		POP	usereg
-check_backscroll_buffer_end:
 		rts
 
 
