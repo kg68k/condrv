@@ -2,10 +2,10 @@
 	.title	condrv(em).sys based on Console driver Type-D for X68000 version 1.09c
 
 
-VERSION:	.reg	'1.09c+14'
-VERSION_ID:	.equ	'e14 '
-DATE:		.reg	'2000/04/23'
-AUTHOR:		.reg	'立花えり子'
+VERSION:	.reg	'1.09c+15'
+VERSION_ID:	.equ	'e15 '
+DATE:		.reg	'2022-04-25'
+AUTHOR:		.reg	'TcbnErik'
 
 
 # symbols
@@ -5578,6 +5578,7 @@ get_char_endofbuf:
 		rts
 
 * ラスタコピー呼び出し ------------------------ *
+* break d0-d2
 
 rascpy_up_all:
 		move	(window_line,pc),d0
@@ -5586,18 +5587,17 @@ rascpy_up_shl2:
 		lsl	#2,d0
 rascpy_up:
 		add	(text_ras_no,pc),d1	ラスタ番号
-		move	#$101,d2
+		move	d0,d2
+		moveq	#%1100,d0
 		bra	@f
 rascpy_down:
-		move	#$feff,d2
+		move	d0,d2
+		move	#$ff<<8+%1100,d0
 @@:
-		move.l	a3,-(sp)
-		lea	(CRTC_R21),a3
-		move	(a3),-(sp)
-		move	#%1_0000_1100,(a3)
-		bsr	txrascpy_sub
-		move	(sp)+,(a3)
-		movea.l	(sp)+,a3
+		move.l	d3,-(sp)
+		move	d0,d3
+		IOCS	_TXRASCPY
+		move.l	(sp)+,d3
 		rts
 
 * バックスクロール画面の最下行を消して行入力をする

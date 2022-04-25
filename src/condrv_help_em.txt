@@ -1,5 +1,5 @@
 
-			----- Console driver v1.09+14 Help (EMACS mode) -----
+			----- Console driver Help (EMACS mode) -----
 
   C- : CTRL
   S- : SHIFT

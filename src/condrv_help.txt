@@ -1,5 +1,5 @@
 
-			----- Console driver v1.09+14 Help -----
+			----- Console driver Help -----
 
   ~ : [OPT.1]	      ^ : [CTRL]
 
