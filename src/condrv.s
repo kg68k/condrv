@@ -718,7 +718,7 @@ putbuf_bs_nb:
 		subq.l	#1,a4~write
 		TopChk	a4~write
 
-		.if	1			;1 バイト半角文字を BS 一個で削除する
+* 1 バイト半角文字を BS 一個で削除する
 
 * 直前の 1 バイトが $80、$f0-$ff なら、今削除した
 * 1 バイトと合わせて 2 バイト半角文字の可能性がある.
@@ -745,7 +745,7 @@ putbuf_bs_check:
 * aa～	更に前方
 * aa bb cc dd XX ..
 
-* データ列がとのように文字を構成するかを考える.
+* データ列がどのように文字を構成するかを考える.
 * aa bb [cc dd] [XX ..]
 * というように [cc dd]、[XX ..] が組として 2 バイト文字を
 * 構成しているなら、更にもう 1 バイト、XX を削除する.
@@ -799,42 +799,6 @@ putbuf_bs_loop_end:
 		addq.b	#1,d0~column		;1 バイト削除
 		subq.l	#1,a4~write
 		TopChk	a4~write
-		.endif
-
-		.if	0
-
-* バックスクロール閲覧開始時に桁位置を検査・補正するようにしたので
-* ここでの処理は不要になった(97/09/19).
-* 既に使用できないコードなので有効にしないこと(98/05/27).
-
-usereg2:	.reg	d0-d1/a1-a2/a5
-		PUSH	usereg2
-		lea	(line_buf,pc),a2
-		tst.b	(a2)
-		bmi	@f
-
-		lea	(cursorY,pc),a5
-		move	(a5),d1
-		lsl	#2,d1
-		movea.l	(a2,d1.w),a1
-		cmpa.l	a1,a3~now		a3=書き込み位置
-		bne	@f
-		move	-(a5),d1		cursorXbyte
-		move	-(a5),d0		cursorX
-		adda	d1,a1
-		addq.l	#1,a1
-		EndChk	a1
-		cmpa.l	a1,a4
-		bne	@f
-		subq	#1,d0
-		bmi	@f
-		subq	#1,d1
-		bmi	@f
-		move	d0,(a5)+
-		move	d1,(a5)+
-@@:
-		POP	usereg2
-		.endif
 
 		bra	putbuf_end
 
@@ -3079,9 +3043,6 @@ isearch_setfnc:
 		move.b	(a0)+,d0
 		bne	isearch_setfnc_loop
 
-		.if	0
-		bsr	gm_inactive
-		.endif
 		bsr	fep_enable
 
 * general_work:	.dc.b	'isearch ['
@@ -3445,9 +3406,6 @@ isearch_skip_save_str:
 		addq.l	#6,sp
 
 		bsr	fep_disable
-		.if	0
-		bsr	gm_active
-		.endif
 		bsr	clear_cursor
 		bra	clear_message
 
@@ -3647,7 +3605,6 @@ jump_scroll:
 @@:
 		movea.l	a1,a0			見つけた行を最上段に表示
 
-		.if	1
 		move	(window_line,pc),d1	;センタリング
 		lsr	#1,d1
 		subq	#1,d1			;表示行数の半分だけ下にずらす
@@ -3662,7 +3619,6 @@ jump_scroll_center_loop:
 		TopChk	a0
 		dbra	d1,jump_scroll_center_loop
 jump_scroll_center_loop_end:
-		.endif
 
 		PUSH	d2/a1
 		bsr	reset_line_address_buf_2
@@ -4967,17 +4923,12 @@ to_hex_loop2:
 key_redraw_window:
 		bsr	clear_text_plane	;バックログ画面塗りつぶし
 		bsr	draw_window_tipline	;上端と下端の横線を描く
-		.if	0
-		bra	draw_backscroll
-**		rts
-		.else
 		bsr	get_cursor_line_buffer
 		st	(a3)			;カーソル行を中央に表示する
 		move	(cursorX,pc),d3
 		move	(cursorXbyte,pc),d2
 		bra	jump_scroll
 **		rts
-		.endif
 		.endif
 
 
@@ -5551,7 +5502,7 @@ get_char_2byte:
 		lsl	#8,d0
 		addq	#1,d2
 		move.b	(a1)+,d0
-		.if	1
+
 * 二バイト文字の上位バイトだけがバッファ末尾に入っていた場合
 * の暴走対策. 通常は有り得ないが、一応念の為.
 		bne	@f
@@ -5559,7 +5510,6 @@ get_char_2byte:
 		subq	#1,d2
 		bra	get_char_1byte
 @@:
-		.endif
 		EndChk	a1
 get_char_1byte:
 		cmpi	#TAB,d0
@@ -5662,17 +5612,10 @@ usereg:		.reg	d1-d7/a2-a5
 
 		move	(sp)+,d1		;!
 		lsl	#2,d1
-		.if	0
-		bsr	clear_text_raster_m4	;入力行のマウスプレーンをクリアする
-		.else
 		moveq	#0,d0			;マスクは描き直さない
 		moveq	#4-1,d2
 		bsr	clear_text_raster
-		.endif
 
-		.if	0
-		bsr	gm_inactive
-		.endif
 		bsr	fep_enable
 
 		btst	#3,(option_m_flag,pc)
@@ -5690,9 +5633,6 @@ usereg:		.reg	d1-d7/a2-a5
 		IOCS	_OS_CUROF
 @@:
 		bsr	fep_disable
-		.if	0
-		bsr	gm_active
-		.endif
 		bsr	clear_message		;マウスプレーンの復帰
 
 * 待避したテキストを元に戻す
@@ -5731,41 +5671,6 @@ move_textblock:
 		movem.l	d1-d7/a4,-(a3)
 		dbra	d0,@b
 		rts
-
-
-* GMの制御方法を変えた為、以下のgm_(in)activeは不要になった(97/09/21).
-
-		.if	0
-
-* GM が常駐していたら一時的に動作を停止させる. d0-d1/a1 破壊
-* gm_automaskを停止フラグに流用.
-
-gm_inactive:
-		lea	(gm_automask,pc),a1
-		clr.b	(a1)
-
-		GMcall	_GM_VERSION_NUMBER
-		bne	gm_inactive_end		;未常駐
-
-		GMcall	_GM_ACTIVE_STATE
-		tst.l	d0
-		beq	gm_inactive_end		;既に停止中
-
-		st	(a1)
-		GMcall	_GM_INACTIVE
-gm_inactive_end:
-		rts
-
-* GM を停止させていたら動作を再開させる
-gm_active:
-		move.b	(gm_automask,pc),d0
-		beq	gm_active_end		;常駐していないか、禁止していない
-		GMcall	_GM_ACTIVE
-gm_active_end:
-*		bra	clear_message
-		rts
-
-		.endif
 
 
 * バックログ画面最下行の文字列を消去する ------ *
