@@ -4,7 +4,7 @@
 
 VERSION:	.reg	'1.09c+15'
 VERSION_ID:	.equ	'e15 '
-DATE:		.reg	'2022-04-25'
+DATE:		.reg	'2022-04-27'
 AUTHOR:		.reg	'TcbnErik'
 
 
@@ -398,20 +398,6 @@ dummy_rte:
 
 * New IOCS Call ------------------------------- *
 
-iocs_b_print:
-usereg		.reg	d1/a1
-		PUSH	usereg
-		moveq	#0,d1
-		move.b	(a1)+,d1
-		beq	@f			終わり
-1:		bsr	condrv_put_char
-		move.b	(a1)+,d1		次の一文字
-		bne	1b
-@@:
-		POP	usereg
-		move.l	(b_print_orig,pc),-(sp)
-		rts
-
 iocs_txrascpy:
 usereg		.reg	d1-d2/d4/a3
 		PUSH	usereg
@@ -473,10 +459,45 @@ txrascpy_loop:
 		POP	usereg
 		rts
 
-*condrv_put_char_forceの下に移動.
-*iocs_b_putc:
-*		move.l	(b_putc_orig,pc),-(sp)
-*		bra	condrv_put_char
+
+iocs_b_print:
+		move.l	d1,-(sp)
+		moveq	#0,d1
+		move.b	(a1)+,d1
+		beq	@f			終わり
+1:		bsr	iocs_b_putc
+		move.b	(a1)+,d1		次の一文字
+		bne	1b
+@@:
+		move.l	(sp)+,d1
+		rts
+
+
+iocs_b_putc:
+		move.b	(FIRSTBYTE),d0
+		movea.l	(b_putc_orig,pc),a0
+		beq	b_putc_fb0
+		bgt	b_putc_go		;ESCシーケンス中 d0.b==$1b
+
+		move.l	d1,-(sp)		;2バイト文字の下位バイト
+		move	(FIRSTBYTE),d1
+		move.b	(3,sp),d1
+		bsr	condrv_put_char
+		move.l	(sp)+,d1
+b_putc_jmporig:
+		jmp	(a0)
+b_putc_fb0:
+		cmpi	#$0100,d1
+		bcc	b_putc_go
+		move.b	d1,d0
+		bpl	b_putc_go		;ESCの場合、d0.b==$1bでcondrv_put_charを呼ぶ
+		lsr.b	#5,d0
+		btst	d0,#%1001_0000
+		bne	b_putc_jmporig		;2バイト文字の上位バイト
+b_putc_go:
+		pea	(a0)
+		bra	condrv_put_char
+
 
 * End of New IOCS Call ----------------------- *
 
@@ -508,10 +529,6 @@ a6~buf:		.reg	a6
 condrv_put_char_force:
 		PUSH	usereg
 		bra	putbuf_not_esc
-
-iocs_b_putc:
-		move.l	(b_putc_orig,pc),-(sp)
-		bra	condrv_put_char
 
 condrv_put_char:
 		PUSH	usereg
