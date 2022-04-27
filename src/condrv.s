@@ -4,7 +4,7 @@
 
 VERSION:	.reg	'1.09c+15'
 VERSION_ID:	.equ	'e15 '
-DATE:		.reg	'2022-04-27'
+DATE:		.reg	'2022-04-28'
 AUTHOR:		.reg	'TcbnErik'
 
 
@@ -35,6 +35,11 @@ AUTHOR:		.reg	'TcbnErik'
 			.fail	1
 		.endif
 	.endif
+
+KEYBIND_TYPE:	.reg	''
+		.ifdef	__EMACS
+KEYBIND_TYPE:	.reg	'[em]'
+		.endif
 
 
 * Include File -------------------------------- *
@@ -108,6 +113,8 @@ TXCOLOR:	.equ	$994
 TXUSEMD:	.equ	$9dd
 SKEYMOD:	.equ	$bc1
 MPUTYPE:	.equ	$cbc
+
+FON_SML8:	.equ	$f3a000
 
 
 * Macro --------------------------------------- *
@@ -1942,8 +1949,7 @@ set_text_mode:
 		addq.l	#2*4,a1
 		bsr	set_text_palette	;%11xx
 
-		bsr	clear_text_plane	;バックログ画面塗りつぶし
-		bsr	draw_window_tipline	;上端と下端の横線を描く
+		bsr	draw_window
 
 		lea	(cursor_blink_count,pc),a0
 		clr	(a0)+
@@ -2051,15 +2057,20 @@ fill_text_block:
 
 * 上端と下端の横線を描く ---------------------- *
 
+draw_window:
+usereg:		.reg	a0-a3
+		PUSH	usereg
+		bsr	clear_text_plane	;バックログ画面塗りつぶし
+		bsr	draw_window_tipline	;上端と下端の横線を描く
+		bsr	draw_window_title
+		POP	usereg
+		rts
+
 draw_window_tipline:
+		bsr	get_window_bottom_tvram
+		lea	(4*128,a0),a0		;下の線
 		movea.l	(text_address,pc),a1
-		lea	(-4*128,a1),a0		;上の線
-		moveq	#1,d0
-		add	(window_line,pc),d0
-		lsl	#4,d0			;*16
-		addq	#4,d0
-		lsl.l	#7,d0			;*128
-		adda.l	d0,a1
+		lea	(-4*128,a1),a1		;上の線
 
 		moveq	#WIDTH/4-1,d0
 		moveq	#-1,d1
@@ -2068,6 +2079,40 @@ draw_window_tipline:
 		move.l	d1,(a1)+
 		dbra	d0,@b
 		rts
+
+draw_window_title:
+		bsr	get_window_bottom_tvram
+		.ifdef	__EMACS
+		lea	(WIDTH-4-WINDOE_TITLE_LEN,a0),a0	;右寄せで描画
+		.else
+		addq.l	#2,a0
+		.endif
+		lea	(window_title,pc),a1
+		lea	(FON_SML8),a2
+		bra	1f
+@@:
+		lsl	#3,d0
+		lea	(a2),a3
+		adda.l	d0,a3
+		move.b	(a3)+,(a0)+
+		.irp	i,1,2,3,4,5,6,7
+		move.b	(a3)+,(128*i-1,a0)
+		.endm
+1:
+		moveq	#0,d0
+		move.b	(a1)+,d0
+		bne	@b
+		rts
+
+get_window_bottom_tvram:
+		movea.l	(text_address,pc),a0
+		moveq	#1,d0
+		add	(window_line,pc),d0
+		swap	d0			;
+		lsr.l	#16-4-7,d0		;*16*128
+		adda.l	d0,a0
+		rts
+
 
 * 以前のメッセージ表示行を消去する ------------ *
 * in	a4.l	window_line
@@ -4938,8 +4983,7 @@ to_hex_loop2:
 
 		.ifdef	__EMACS
 key_redraw_window:
-		bsr	clear_text_plane	;バックログ画面塗りつぶし
-		bsr	draw_window_tipline	;上端と下端の横線を描く
+		bsr	draw_window
 		bsr	get_cursor_line_buffer
 		st	(a3)			;カーソル行を中央に表示する
 		move	(cursorX,pc),d3
@@ -6425,10 +6469,7 @@ command_exec:
 		.even				なるべく上の方に破壊されてもいいものを置く
 title_mes:
 		.dc.b	CR,LF
-		.dc.b	'Console driver version ',VERSION
-		.ifdef	__EMACS
-			.dc.b	'[em]'
-		.endif
+		.dc.b	'Console driver version ',VERSION,KEYBIND_TYPE
 		.dc.b	' / Copyright 1990 卑弥呼☆, ',DATE,' ',AUTHOR,'.',CR,LF
 str_buf:	.dc.b	0
 xcon_filename:	.dc.b	'XCON',0
@@ -6467,6 +6508,10 @@ isearch_mes_1:
 isearch_mes_2:
 		.dc.b	']:',0
 
+window_title:
+		.dc.b	' Console driver Type-D v',VERSION,KEYBIND_TYPE,' - Multi scroll window '
+WINDOE_TITLE_LEN:	.equ	$-window_title
+		.dc.b	0
 
 write_file_prompt:
 		.dc.b	' ファイル書き出し:',0
