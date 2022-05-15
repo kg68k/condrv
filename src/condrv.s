@@ -162,15 +162,6 @@ SFTbtst:	.macro	keybit
 		btst	#keybit,(SFTSTAT)
 		.endm
 
-DB_PUTC:	.macro	char
-		PUSH	d0-d1/a0
-		moveq	#char,d1
-*		IOCS	_B_PUTC
-		movea.l	(b_putc_orig,pc),a0
-		jsr	(a0)
-		POP	d0-d1/a0
-		.endm
-
 
 * Offset Table -------------------------------- *
 
@@ -317,11 +308,6 @@ usereg:		.reg	d1-d2/a0-a3
 		lea	(ctype_table,pc),a2
 
 		lea	(condrv_put_char_force,pc),a3
-*		cmpi	#RTS,(a3)
-*		sne	-(sp)
-*		bne	@f
-*		bsr	toggle_buffering_mode
-*@@:
 		move	(a1),d1
 		bne	xcon_output_2
 xcon_output_loop:
@@ -329,7 +315,6 @@ xcon_output_loop:
 		tst.b	(a2,d1.w)
 		bmi	xcon_output_1
 
-***		bsr	print_d1
 		jsr	(a3)			;一文字書き込み
 
 		dbra	d2,xcon_output_loop
@@ -346,7 +331,6 @@ xcon_output_1:
 		move	(a1),d1
 xcon_output_2:
 		move.b	(a0)+,d1
-***		bsr	print_d1
 		jsr	(a3)			;一文字書き込み
 		moveq	#0,d1
 
@@ -358,42 +342,9 @@ xcon_output_next:
 
 		move	d0,(a1)
 xcon_output_end:
-*		tst.b	(sp)+
-*		bne	@f
-*		bsr	toggle_buffering_mode
-*@@:
 xcon_output_return:
 		POP	usereg
 		rts
-
-		.if	0
-print_d1:
-		PUSH	d0-d7/a0-a6
-		lea	(print_d1_buf+1,pc),a0
-		moveq	#4-1,d0
-print_d1_loop:
-		rol	#4,d1
-		moveq	#$f,d2
-		and.b	d1,d2
-		addi.b	#'0',d2
-		cmpi.b	#'9',d2
-		bls	@f
-		addi.b	#'a'-('9'+1),d2
-@@:
-		move.b	d2,(a0)+
-		dbra	d0,print_d1_loop
-
-		lea	(print_d1_buf,pc),a1
-		movea.l	(b_print_orig,pc),a0
-		jsr	(a0)
-
-		POP	d0-d7/a0-a6
-		rts
-print_d1_buf:
-		.dc.b	'(0000)',0
-		.even
-
-		.endif
 
 * End of Device Driver Interface -------------- *
 
@@ -966,7 +917,7 @@ pastbuf_adr:
 * IOCS _KEY_INIT ------------------------------ *
 
 iocs_key_init:
-.if 0
+.if 0  ;有効にしないのはなにか理由があったような気がする
 		move.l	(key_init_orig,pc),-(sp)
 .else
 		move.l	(key_init_orig,pc),d0
@@ -977,13 +928,6 @@ iocs_key_init:
 * キーバッファ初期化 -------------------------- *
 
 initialize_keypast_buffer:
-		.if	0
-		movea.l	(pastbuf_adr,pc),a0
-@@:		tst.b	(a0)+
-		bne	@b
-		subq.l	#1,a0
-		move.l	a0,(past_pointer)
-		.endif
 		lea	(nul_string,pc),a0	;NUL はワーク内のアドレスを設定
 		move.l	a0,(past_pointer-nul_string,a0)
 		adda.l	(pastbuf_size,pc),a0	;バッファ末尾に番兵を置く
@@ -2324,8 +2268,6 @@ keyinp_loop2:
 keyinp_loop:
 		bsr	blink_cursor
 		bsr	call_orig_b_keysns
-**		tst.l	d0
-**		beq	keyinp_loop
 * sleep対応 {
 		tst.l	d0
 		bne	@f
@@ -5557,13 +5499,6 @@ input_string:
 usereg:		.reg	d1-d7/a2-a5
 		PUSH	usereg
 
-*		lea	(condrv_put_char,pc),a5
-*		bset	#GETSS_bit,(bitflag-condrv_put_char,a5)
-*		cmpi	#RTS,(a5)
-*		seq	-(sp)
-*		beq	@f
-*		bsr	toggle_buffering_mode
-*@@:
 		lea	(stop_level,pc),a5
 		move	(a5),-(sp)		;push stop_level
 		st	(a5)
@@ -5645,11 +5580,6 @@ usereg:		.reg	d1-d7/a2-a5
 		move.l	(sp)+,(TXSTOFST)
 		move.l	(sp)+,(TXADR)
 
-*		tst.b	(sp)+
-*		bne	@f
-*		bsr	toggle_buffering_mode
-*@@:
-*		bclr	#GETSS_bit,(bitflag-condrv_put_char,a5)
 		move	(sp)+,(a5)		;pop stop_level
 
 		lea	(general_work+1,pc),a1
