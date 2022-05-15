@@ -4,7 +4,7 @@
 
 VERSION:	.reg	'1.09c+15'
 VERSION_ID:	.equ	'e15 '
-DATE:		.reg	'2022-04-28'
+DATE:		.reg	'2022-05-16'
 AUTHOR:		.reg	'TcbnErik'
 
 
@@ -17,9 +17,6 @@ AUTHOR:		.reg	'TcbnErik'
 # __UPPER	16 進数の a～f を大文字にする
 # __BUF_POS	buffer-position(C-x =)を有効にする
 # __TAG_JMP	tag-jump(V)を有効にする
-
-# __EOBCUR	カーソルがバッファ末尾の文字の直後まで移動する
-  __EOBCUR:	.equ	1
 
 	.ifdef	__EM_FONT
 		.ifndef	__EM_FONT_TAB
@@ -612,17 +609,13 @@ putbuf_hankaku:
 		addq.b	#1,d2~byte
 putbuf_end:
 		move.b	d0~column,(a0~column)	;バッファ書込桁数
-		.ifdef	__EOBCUR
 		bne	@f
 		move.b	#WIDTH,(a0~column)
 		bsr	make_newline_n
 @@:
-		.endif
 		move.b	d2~byte,(a3~now)	;バッファ書込バイト数
 		clr.b	(a4~write)
-		.ifdef	__EOBCUR
-putbuf_end2:
-		.endif
+
 		movem.l	a2~old/a3~now/a4~write,(buffer_old,a6~buf)
 putbuf_nul:
 putbuf_esc_ne:
@@ -1775,10 +1768,6 @@ end_of_buffer_sub:
 		dbra	d0,@b
 
 		movea.l	(buffer_now,a6),a0
-		.ifndef	__EOBCUR
-		tst.b	(a0)
-		beq	scroll_down_p_sub	;改行直後なら前の行までを表示する
-		.endif
 scroll_down_loop:
 		movea.l	a3,a1			;a1=最後+1
 		lea	(-4,a1),a2		;a2=最後
@@ -1823,9 +1812,6 @@ set_line_address_loop:
 @@:
 		moveq	#0,d0
 		move.b	(a0),d0
-		.ifndef	__EOBCUR
-			beq	@f
-		.endif
 		move.l	a0,(a3)+
 		addq.l	#1,a0
 		adda	d0,a0
@@ -3577,10 +3563,8 @@ search_forward_main:
 		bsr	search_sub_getcur
 		bmi	search_not_found
 @@:
-		.ifdef	__EOBCUR
 		tst.b	(a1)
 		beq	search_not_found
-		.endif
 
 		.ifdef	__EMACS
 		bclr	#ISEARCH_bit,(bitflag-case_table,a0)
@@ -4237,10 +4221,8 @@ key_forward_word:
 		cmpi.b	#CR,(a1)
 		beq	key_forward_char
 forward_word_loop:
-		.ifdef	__EOBCUR
 		tst.b	(a1)
 		beq	forward_word_end
-		.endif
 		cmpi.b	#SPACE,(a1)
 		sls	d4
 		bsr	key_forward_char
@@ -4278,11 +4260,7 @@ forward_word_mb:
 		adda	d1,a1
 		EndChk2	a1
 		tst.b	(a1)+
-		.ifdef	__EOBCUR
-			beq	key_forward_char
-		.else
-			beq	forward_char_end
-		.endif
+		beq	key_forward_char
 		EndChk	a1
 		tst.b	(a1)+
 		bne	key_forward_word
@@ -4310,9 +4288,7 @@ key_forward_char:
 		bsr	get_char
 		cmp	d1,d2
 		beq	cursor_to_right_tip
-		.ifdef	__EOBCUR
 cursor_to_right_move:
-		.endif
 		subq.l	#cursorY-cursorX,a0
 		move	d3,(a0)+
 		move	d2,(a0)
@@ -4329,16 +4305,8 @@ cursor_to_right_endofbuf:
 
 cursor_to_right_tip:
 		tst.b	(a1)+
-		.ifdef	__EOBCUR
-			beq	cursor_to_right_move
-		.else
-			beq	cursor_to_right_endofbuf
-		.endif
+		beq	cursor_to_right_move
 		EndChk	a1
-		.ifndef	__EOBCUR
-		tst.b	(a1)
-		beq	cursor_to_right_endofbuf
-		.endif
 
 		subq.l	#cursorY-cursorX,a0
 		clr.l	(a0)+
@@ -4396,10 +4364,6 @@ key_move_window_down:
 		tst.b	(a1)+
 		beq	move_window_down_end
 		EndChk	a1
-		.ifndef	__EOBCUR
-		tst.b	(a1)
-		beq	move_window_down_end
-		.endif
 
 		bsr	scroll_up_sub
 		lea	(cursorY,pc),a4
@@ -4450,10 +4414,6 @@ next_line_scroll:
 		tst.b	(a1)+
 		beq	next_line_end
 		EndChk	a1
-		.ifndef	__EOBCUR
-			tst.b	(a1)
-			beq	next_line_end
-		.endif
 		.ifdef	__EMACS
 			btst	#OPT_S_bit,(option_flag,pc)
 			bne	@f
@@ -4732,35 +4692,12 @@ key_end_of_page:
 key_end_of_line:
 		bsr	get_cursor_line_buffer
 		bmi	end_of_line_end
-		.ifdef	__EOBCUR
-			.ifdef	__EMACS
-				bra	check_column_max
-			.else
-				bsr	check_column_max
-				move	(cursorY,pc),d0
-				bra	draw_line_d0
-			.endif
+		.ifdef	__EMACS
+			bra	check_column_max
 		.else
-		move	(cursorXbyte,pc),d2
-		move	(cursorX,pc),d3
-		moveq	#0,d1
-		move.b	(a1)+,d1		d1=バイト数
-		adda	d2,a1			d2=cursorXbyte
-		EndChk2	a1
-@@:
-		move	d3,d4			d3=cursorX
-		swap	d4
-		move	d2,d4
-		bsr	get_char
-		cmp	d1,d2
-		bne	@b
-
-		lea	(cursorX,pc),a0
-		move.l	d4,(a0)+		cursorX/Xbyte
-		.ifndef	__EMACS
-			move	(a0),d0		cursorY
+			bsr	check_column_max
+			move	(cursorY,pc),d0
 			bra	draw_line_d0
-		.endif
 		.endif
 end_of_line_end:
 already_help:
@@ -5516,11 +5453,8 @@ check_column:
 		EndChk	a1
 check_column_loop:
 		cmp	d1,d2
-		.ifdef	__EOBCUR
-			beq	check_column_end2
-		.else
-			beq	check_column_end
-		.endif
+		beq	check_column_end2
+
 		move	d3,d4
 		swap	d4
 		move	d2,d4
@@ -5531,7 +5465,6 @@ check_column_end:
 		move.l	d4,(a4)
 		rts
 
-		.ifdef	__EOBCUR
 check_column_end2:
 		tst.b	(a1)
 		bne	check_column_end
@@ -5539,7 +5472,6 @@ check_column_end2:
 		swap	d4
 		move	d2,d4
 		bra	check_column_end
-		.endif
 
 * 一文字収得する ------------------------------ *
 *	d0.w	文字
