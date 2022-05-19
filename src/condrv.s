@@ -4,7 +4,7 @@
 
 VERSION:	.reg	'1.09c+15'
 VERSION_ID:	.equ	'e15 '
-DATE:		.reg	'2022-05-16'
+DATE:		.reg	'2022-05-20'
 AUTHOR:		.reg	'TcbnErik'
 
 
@@ -293,57 +293,104 @@ xcon_commanderr:
 		move	#$5003,d0		;コマンドコードが不正
 		rts
 
+d0~in_escsq:	.reg	d0
+d1~char_code:	.reg	d1
+d7~remain:	.reg	d7
+a0~input:	.reg	a0
+a1~state:	.reg	a1
+a2~ctype:	.reg	a2
+a3~put_char:	.reg	a3
+a4~st_ptr:	.reg	a4
+
 * XCON への出力
 xcon_output:
-usereg:		.reg	d1-d2/a0-a3
+usereg:		.reg	d1~char_code/d2/d7~remain/a0~input/a1~state/a2~ctype/a3~put_char/a4~st_ptr
 		PUSH	usereg
-		moveq	#0,d0			;ESCフラグ/返値
+		move.l	(DEVIO_LENGTH,a5),d7~remain
+		beq	xcon_output_end
+		subq.l	#1,d7~remain
 
-		move.l	(DEVIO_LENGTH,a5),d2
-		beq	xcon_output_return
-		subq.l	#1,d2
+		movea.l	(DEVIO_ADDRESS,a5),a0~input
+		lea	(ctype_table,pc),a2~ctype
+		lea	(condrv_put_char_force,pc),a3~put_char
+		lea	(xcon_output_st,pc),a4~st_ptr
 
-		movea.l	(DEVIO_ADDRESS,a5),a0
-		lea	(xcon_output_hb,pc),a1
-		lea	(ctype_table,pc),a2
-
-		lea	(condrv_put_char_force,pc),a3
-		move	(a1),d1
-		bne	xcon_output_2
+		move.l	(a4~st_ptr),d0
+		movea.l	d0,a1~state
+		bne	@f
+		lea	(xcon_output_plain,pc),a1~state
+@@:
+		move	(xcon_output_hb-xcon_output_st,a4~st_ptr),d1~char_code
+		move.b	d1~char_code,d0~in_escsq
 xcon_output_loop:
-		move.b	(a0)+,d1
-		tst.b	(a2,d1.w)
-		bmi	xcon_output_1
+		move.b	(a0~input)+,d1~char_code
+*		beq	xcon_output_next	;$00の扱いはput_charに任せる
+		jmp	(a1~state)		;状態ごとの処理に分岐
 
-		jsr	(a3)			;一文字書き込み
+;エスケープシーケンス開始
+xcon_output_esc0:
+		move.b	d1~char_code,d0~in_escsq	;シーケンス中はput_charをd0.b=$1bで呼び出す
+		lea	(xcon_output_esc,pc),a1~state
+		bra	xcon_output_putchar
+;ESCの次
+xcon_output_esc:
+		lea	(xcon_output_escbr,pc),a1~state
+		cmpi.b	#'[',d1~char_code
+		beq	xcon_output_putchar
 
-		dbra	d2,xcon_output_loop
+		subq.l	#xcon_output_escbr-xcon_output_esc2,a1~state
+		cmpi.b	#'=',d1~char_code
+		beq	xcon_output_putchar
+
+		bra	xcon_output_esc1		;ESC [*DEM0-3]、未対応シーケンス
+xcon_output_esc2:
+		lea	(xcon_output_esc1,pc),a1~state	;ESC = ... 次の2バイトで終了
+		bra	xcon_output_putchar
+xcon_output_escbr:
+		moveq	#$20,d2				;ESC [ ... @A-Z`a-zで終了
+		or.b	d1~char_code,d2
+		cmpi.b	#'`',d2
+		bcs	xcon_output_putchar
+		cmpi.b	#'z',d2
+		bhi	xcon_output_putchar
+xcon_output_esc1:
+		jsr	(a3~put_char)
+		moveq	#0,d0~in_escsq			;この文字でエスケープシーケンス終了
+		lea	(xcon_output_plain,pc),a1~state
 		bra	xcon_output_next
 
-xcon_output_1:
-		move.b	d1,(a1)
+;2バイト文字の上位バイト
+xcon_output_mb1:
+		move.b	d1~char_code,-(sp)		;lsl #8
+		move	(sp)+,d1~char_code
+		lea	(xcon_output_mb2,pc),a1~state
+		bra	xcon_output_next
+;2バイト文字の下位バイト
+xcon_output_mb2:
+		jsr	(a3~put_char)
+		moveq	#0,d1~char_code
+		lea	(xcon_output_plain,pc),a1~state
+		bra	xcon_output_next
 
-		dbra	d2,@f
-		clr	d2
-		subq.l	#1,d2
-		bcs	xcon_output_end		;2bytes文字の途中で終わった
-@@:
-		move	(a1),d1
-xcon_output_2:
-		move.b	(a0)+,d1
-		jsr	(a3)			;一文字書き込み
-		moveq	#0,d1
-
-		dbra	d2,xcon_output_loop
+xcon_output_plain:
+		tst.b	(a2~ctype,d1~char_code.w)
+		bmi	xcon_output_mb1		;2バイト文字の上位バイト
+		cmpi.b	#ESC,d1~char_code
+		beq	xcon_output_esc0
+xcon_output_putchar:
+		jsr	(a3~put_char)
 xcon_output_next:
-		clr	d2
-		subq.l	#1,d2
+		dbra	d7~remain,xcon_output_loop
+		clr	d7~remain
+		subq.l	#1,d7~remain
 		bcc	xcon_output_loop
 
-		move	d0,(a1)
+		move.l	a1~state,(a4~st_ptr)	;現在の状態を保存
+		move.b	d0~in_escsq,d1~char_code
+		move	d1~char_code,(xcon_output_hb-xcon_output_st,a4~st_ptr)
 xcon_output_end:
-xcon_output_return:
 		POP	usereg
+		moveq	#0,d0
 		rts
 
 * End of Device Driver Interface -------------- *
@@ -480,10 +527,9 @@ a6~buf:		.reg	a6
 
 
 * 常に書き込み可能な呼び出しアドレス.
-* ESCシーケンス削除は未対応.
 condrv_put_char_force:
 		PUSH	usereg
-		bra	putbuf_not_esc
+		bra	putbuf_force
 
 condrv_put_char:
 		PUSH	usereg
@@ -491,12 +537,12 @@ condrv_put_char:
 
 		move	(stop_level,pc),d3~temp	;新バッファ停止処理
 		bne	putbuf_cansel
-
+putbuf_force:
 		cmpi.b	#ESC,d0
-		bne	putbuf_not_esc
+		bne	@f
 		move.b	(option_ne_flag,pc),d3~temp
 		bne	putbuf_cansel		;ESCシーケンス中
-putbuf_not_esc:
+@@:
 		INIT_BUFFER_IF_BROKEN a6~buf
 
 		lea	(putbuf_column,pc),a0~column
@@ -6723,9 +6769,12 @@ last_line_adr:	.ds.l	1			; line_buf[last_line]
 last_line_byte:	.ds.b	1			;*line_buf[last_line]
 
 stop_level_char:.ds.b	1			;0 or '1'～'9'
-		.even
 
-xcon_output_hb:	.ds	1			XCON への出力:2バイト文字の上位(下位バイトは無視される)
+;XCON への出力の状態
+		.quad
+xcon_output_st:	.ds.l	1
+xcon_output_hb:	.ds.b	1			;2バイト文字の上位バイト
+xcon_output_d0:	.ds.b	1			;$1b=エスケープシーケンス中なら
 
 bufwrite_last:	.ds	1			前回の書き込み文字
 bufmod_stack:	.ds.l	1
