@@ -517,7 +517,8 @@ d4~temp2:	.reg	d4
 *d6~unused2:	.reg	d6
 d7~line0:	.reg	d7
 
-a0~column:	.reg	a0
+~a0:		.equ	ctype_table
+a0~ctype:	.reg	a0
 a1~top:		.reg	a1
 a2~old:		.reg	a2
 a3~now:		.reg	a3
@@ -545,15 +546,18 @@ putbuf_force:
 @@:
 		INIT_BUFFER_IF_BROKEN a6~buf
 
-		lea	(putbuf_column,pc),a0~column
+		lea	(~a0,pc),a0~ctype
 		movem.l	(buffer_top,a6~buf),a1~top/a2~old/a3~now/a4~write/a5~end
-		move.b	(a0~column),d0~column		;現在行の残り桁数
-		move.b	(a3~now),d2~byte		;現在行のバイト数
+		move.b	(putbuf_column-~a0,a0~ctype),d0~column	;現在行の残り桁数
+		move.b	(a3~now),d2~byte	;現在行のバイト数
 		move.l	(line_buf,pc),d7~line0
 
+		moveq	#0,d3~temp
 		move	d1~char,-(sp)
 		move.b	(sp)+,d3~temp		;上位byte
 		beq	putbuf_1byte
+		tst.b	(a0~ctype,d3~temp.w)
+		bpl	putbuf_cansel		;上位バイトが不正な値
 		cmpi.b	#$f0,d3~temp
 		bcc	putbuf_2byte_hankaku
 		cmpi.b	#$80,d3~temp
@@ -577,12 +581,17 @@ putbuf_2byte:
 		bsr	PointerForward
 
 		move.b	d1~char,(a4~write)+	;下位byte
+		bne	@f
+		move.b	#$20,(-1,a4~write)	;下位バイトが$00なら$20に差し替える
+@@:
 		bsr	PointerForward
 
 		addq.b	#2,d2~byte
 		bra	putbuf_end
 
 putbuf_1byte:
+		tst.b	(a0~ctype,d1~char.w)
+		bmi	putbuf_cansel		;2バイト文字の上位バイトだけは不可
 		cmpi	#$20,d1~char
 		bcs	putbuf_ctrl0~1f		;$00～$1f
 		cmpi	#DEL,d1~char
@@ -605,9 +614,9 @@ putbuf_hankaku:
 
 		addq.b	#1,d2~byte
 putbuf_end:
-		move.b	d0~column,(a0~column)	;バッファ書込桁数
+		move.b	d0~column,(putbuf_column-~a0,a0~ctype)	;バッファ書込桁数
 		bne	@f
-		move.b	#WIDTH,(a0~column)
+		move.b	#WIDTH,(putbuf_column-~a0,a0~ctype)
 		bsr	make_newline_n
 @@:
 		move.b	d2~byte,(a3~now)	;バッファ書込バイト数
@@ -652,14 +661,14 @@ PointerForward:
 @@:
 		cmpa.l	d7~line0,a2~old
 		bne	@f
-		st	(line_buf-putbuf_column,a0~column)
-@@:
-		cmpa.l	(mark_line_adr,pc),a2~old
-		bne	@f
-		clr.l	(mark_char_adr-putbuf_column,a0~column)
-		clr.l	(mark_line_adr-putbuf_column,a0~column)
+		st	(line_buf-~a0,a0~ctype)
 @@:
 		moveq	#0,d4~temp2
+		cmpa.l	(mark_line_adr-~a0,a0~ctype),a2~old
+		bne	@f
+		move.l	d4~temp2,(mark_char_adr-~a0,a0~ctype)
+		move.l	d4~temp2,(mark_line_adr-~a0,a0~ctype)
+@@:
 		move.b	(a2~old)+,d4~temp2
 		adda	d4~temp2,a2~old
 		cmpa.l	a5~end,a2~old
