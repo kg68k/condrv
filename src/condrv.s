@@ -55,7 +55,7 @@ KEYBIND_TYPE:	.reg	'[em]'
 WIDTH:		.equ	96
 GETSMAX:	.equ	69			文字列入力の最大バイト数(奇数)
 		.fail	(GETSMAX.and.1).eq.0
-RL_PASTBUF:	.equ	general_work+GETSMAX+3	C-^,\ 用のペーストバッファ
+RL_PASTEBUF:	.equ	general_work+GETSMAX+3	C-^,\ 用のペーストバッファ
 KBbuf_Default:	.equ	1024
 BLINKCYCLE:	.equ	50
 TEXTSAVESIZE:	.equ	128*16*2		桁*ライン*面
@@ -537,12 +537,12 @@ condrv_put_char:
 *		rts				;バッファ取り込み停止中
 
 		move	(stop_level,pc),d3~temp	;新バッファ停止処理
-		bne	putbuf_cansel
+		bne	putbuf_cancel
 putbuf_force:
 		cmpi.b	#ESC,d0
 		bne	@f
 		move.b	(option_ne_flag,pc),d3~temp
-		bne	putbuf_cansel		;ESCシーケンス中
+		bne	putbuf_cancel		;ESCシーケンス中
 @@:
 		INIT_BUFFER_IF_BROKEN a6~buf
 
@@ -557,7 +557,7 @@ putbuf_force:
 		move.b	(sp)+,d3~temp		;上位byte
 		beq	putbuf_1byte
 		tst.b	(a0~ctype,d3~temp.w)
-		bpl	putbuf_cansel		;上位バイトが不正な値
+		bpl	putbuf_cancel		;上位バイトが不正な値
 		cmpi.b	#$f0,d3~temp
 		bcc	putbuf_2byte_hankaku
 		cmpi.b	#$80,d3~temp
@@ -591,14 +591,14 @@ putbuf_2byte:
 
 putbuf_1byte:
 		tst.b	(a0~ctype,d1~char.w)
-		bmi	putbuf_cansel		;2バイト文字の上位バイトだけは不可
+		bmi	putbuf_cancel		;2バイト文字の上位バイトだけは不可
 		cmpi	#$20,d1~char
 		bcs	putbuf_ctrl0~1f		;$00～$1f
 		cmpi	#DEL,d1~char
 		bne	putbuf_hankaku		;$20-$7e
 ;putbuf_del:
 		move.b	(option_nc_flag,pc),d3~temp
-		bne	putbuf_cansel
+		bne	putbuf_cancel
 putbuf_bs:
 putbuf_esc:
 putbuf_ctrl:
@@ -626,7 +626,7 @@ putbuf_end:
 putbuf_nul:
 putbuf_esc_ne:
 putbuf_ctrl_nc:
-putbuf_cansel:
+putbuf_cancel:
 		POP	usereg
 		move	d1~char,(bufwrite_last)
 		rts
@@ -685,7 +685,7 @@ putbuf_lf:
 		moveq	#CR,d1~char
 putbuf_cr:
 		cmp	(bufwrite_last,pc),d1~char
-		beq	putbuf_cansel		;前回も CR だったら無視
+		beq	putbuf_cancel		;前回も CR だったら無視
 
 		tst.b	d0~column
 		bne	@f
@@ -735,7 +735,7 @@ putbuf_tab_loop:
 
 putbuf_bs_nb:
 		subq.b	#1,d2~byte		;BS 処理(-nb)
-		bcs	putbuf_cansel		;カーソルが行の左端にある
+		bcs	putbuf_cancel		;カーソルが行の左端にある
 
 		addq.b	#1,d0~column		;1 バイト削除
 		subq.l	#1,a4~write
@@ -963,10 +963,10 @@ nul_string:
 keyctrl_flag:
 		.dc.b	0			-1:キー操作抑制
 		.dc.l	condrv_put_char
-pastbuf_size:
+pastebuf_size:
 		.dc.l	KBbuf_Default
-pastbuf_adr:
-		.dc.l	keypast_buffer
+pastebuf_adr:
+		.dc.l	keypaste_buffer
 		.dc.l	'hmk*'
 
 * IOCS _KEY_INIT ------------------------------ *
@@ -978,15 +978,15 @@ iocs_key_init:
 		move.l	(key_init_orig,pc),d0
 		move.l	d0,-(sp)
 .endif
-		bra	initialize_keypast_buffer
+		bra	initialize_keypaste_buffer
 
 * キーバッファ初期化 -------------------------- *
 
-initialize_keypast_buffer:
+initialize_keypaste_buffer:
 		lea	(nul_string,pc),a0	;NUL はワーク内のアドレスを設定
-		move.l	a0,(past_pointer-nul_string,a0)
-		adda.l	(pastbuf_size,pc),a0	;バッファ末尾に番兵を置く
-		clr.b	(keypast_buffer-nul_string-1,a0)
+		move.l	a0,(paste_pointer-nul_string,a0)
+		adda.l	(pastebuf_size,pc),a0	;バッファ末尾に番兵を置く
+		clr.b	(keypaste_buffer-nul_string-1,a0)
 		rts
 
 
@@ -1037,16 +1037,16 @@ call_orig_b_keyinp:
 * IOCS _B_KEYSNS ------------------------------ *
 
 iocs_b_keysns:
-		movea.l	(past_pointer,pc),a0
+		movea.l	(paste_pointer,pc),a0
 		moveq	#0,d0
 		move.b	(a0)+,d0
-		beq	not_past_mode
+		beq	not_paste_mode
 
 		KEYbtst	KEY_ESC
-		bne	past_stop		* ESC が押されていたらペーストを中止する
+		bne	paste_stop		* ESC が押されていたらペーストを中止する
 
 		tst	(KBUFNUM)
-		bne	not_past_mode		* キーが入力されている
+		bne	not_paste_mode		* キーが入力されている
 
 usereg:		.reg	d1-d2/a1-a3
 		PUSH	usereg
@@ -1057,7 +1057,7 @@ usereg:		.reg	d1-d2/a1-a3
 		moveq	#0,d2			-1:2バイト文字処理中
 
 		ori	#$700,sr
-past_one_more_char:
+paste_one_more_char:
 		lea	(KBUFNUM),a2
 		movea.l	(2,a2),a1
 		addq.l	#2,a1
@@ -1066,31 +1066,31 @@ past_one_more_char:
 		lea	($81c),a1
 @@:
 		bclr	#AFTERCR_bit,(bitflag)
-		beq	past_without_header	普通に出力
+		beq	paste_without_header	普通に出力
 
 		move.b	(option_flag,pc),d1	-j
 		bpl	@f			コード入力モードでなければヘッダあり
 
 		LEDbtst	LED_コード
-		bne	past_without_header	コード入力モードでは常にヘッダを出力しない
+		bne	paste_without_header	コード入力モードでは常にヘッダを出力しない
 @@:
-		move.b	(past_header,pc),d1
-		beq	past_without_header
+		move.b	(paste_header,pc),d1
+		beq	paste_without_header
 
 		move	d1,(a1)
 		addq	#1,(a2)+
 		move.l	a1,(a2)
-		bra	past_char_end
+		bra	paste_char_end
 
-past_without_header:
-		move.l	a0,(past_pointer)
+paste_without_header:
+		move.l	a0,(paste_pointer)
 		move.b	(option_flag,pc),d1	-j
 		bpl	@f
 		LEDbtst	LED_コード
 		beq	@f
 
 		btst.b	#IS_HEX_bit,(a3,d0.w)	0-9A-Fa-fか？
-		beq	past_char_end
+		beq	paste_char_end
 @@:
 		move	d0,(a1)
 		addq	#1,(a2)+
@@ -1099,24 +1099,24 @@ past_without_header:
 		tst.b	(a3,d0.w)
 		bpl	@f			1バイト文字か？
 		tst	d2
-		bne	past_char_end
+		bne	paste_char_end
 
 		moveq	#-1,d2
 		move.b	(a0)+,d0		２バイト目を処理
-		bne	past_one_more_char
-		bra	past_char_end
+		bne	paste_one_more_char
+		bra	paste_char_end
 @@:
 		cmpi.b	#CR,d0
-		bne	past_char_end
+		bne	paste_char_end
 		bset	#AFTERCR_bit,(bitflag)
-past_char_end:
+paste_char_end:
 		move	(sp)+,sr
 		POP	usereg			* ペーストしたらキーチェックは不要
 call_orig_b_keysns:
 		move.l	(b_keysns_orig,pc),-(sp)
 		rts
 
-not_past_mode:
+not_paste_mode:
 usereg:		.reg	d1-d7/a0-a6
 		PUSH	usereg
 * sleep対応 {
@@ -1143,8 +1143,8 @@ KEYCHK:		.macro	keycode,address
 		beq	address
 		.endm
 
-		KEYCHK	KEY_4   ,direct_key_past
-		KEYCHK	KEY_HELP,direct_key_past
+		KEYCHK	KEY_4   ,direct_key_paste
+		KEYCHK	KEY_HELP,direct_key_paste
 		KEYCHK	KEY_BS  ,direct_key_toggle
 		KEYCHK	KEY_CLR ,direct_key_clear
 
@@ -1185,8 +1185,8 @@ is_text_used:
 @@:		rts
 
 * ペーストを中止する
-past_stop:
-		bsr	initialize_keypast_buffer
+paste_stop:
+		bsr	initialize_keypaste_buffer
 @@:
 		KEYbtst	KEY_ESC
 		bne	@b			;ESCが離されるまで待つ
@@ -1198,7 +1198,7 @@ keybuf_clear:
 		rts				;0を返す
 
 * ^4 , ^HELP : カットした領域をペースト
-direct_key_past:
+direct_key_paste:
 		bsr	yank_sub
 		bsr	wait_release_ctrl_key
 		bra	iocs_keysns_flush
@@ -1711,7 +1711,7 @@ not_sleep_exit:
 wait_release_ctrl_key:
 		move.b	(option_p_flag,pc),d0
 		beq	1f
-		move.l	(past_pointer,pc),a0
+		move.l	(paste_pointer,pc),a0
 		tst.b	(a0)
 		beq	1f
 @@:
@@ -1830,7 +1830,7 @@ draw_backscroll_loop:
 
 open_backscroll_window:
 		bsr	swap_interrupt_address
-		bsr	initialize_keypast_buffer
+		bsr	initialize_keypaste_buffer
 
 		lea	(bitflag,pc),a1
 		bset	#BACKSCR_bit,(a1)
@@ -2464,9 +2464,9 @@ emacs_key_table:
 		KEYTBL	KEY_CR		,0,key_yank_current_word
 		KEYTBL	KEY_K		,0,key_yank_to_end_of_line
 		KEYTBL	KEY_U		,0,key_yank_from_beginning_of_line
-		KEYTBL	KEY_TAB		,0,key_toggle_past_header_tab
-		KEYTBL	KEY_：		,0,key_toggle_past_header_colon
-		KEYTBL	KEY_－		,0,key_toggle_past_header_hyphen
+		KEYTBL	KEY_TAB		,0,key_toggle_paste_header_tab
+		KEYTBL	KEY_：		,0,key_toggle_paste_header_colon
+		KEYTBL	KEY_－		,0,key_toggle_paste_header_hyphen
 		KEYTBL	KEY_F0		,1,key_beginning_of_buffer
 		KEYTBL	KEY_F1		,1,key_end_of_buffer
 		KEYTBL	KEY_／		,1,key_search_forward
@@ -2475,7 +2475,7 @@ emacs_key_table:
 SHIFT:		.equ	%0000_0001.shl.8
 		KEYTBL	SHIFT+KEY_T	,1,key_beginning_of_page
 		KEYTBL	SHIFT+KEY_B	,1,key_end_of_page
-		KEYTBL	SHIFT+KEY_＞	,0,key_toggle_past_header_bracket
+		KEYTBL	SHIFT+KEY_＞	,0,key_toggle_paste_header_bracket
 		KEYTBL	SHIFT+KEY_／	,1,key_search_backward
 		KEYTBL	SHIFT+KEY_F3	,1,key_search_backward
 		KEYTBL	SHIFT+KEY_F4	,1,key_search_backward_next
@@ -2509,7 +2509,7 @@ CTRL_:		.equ	%0000_0010.shl.8
 		KEYTBL	CTRL_+KEY_R	,1,key_isearch_backward
 		KEYTBL	CTRL_+KEY_＾	,1,key_search_forward_current_word
 		KEYTBL	CTRL_+KEY_＼	,1,key_search_backward_current_word
-		KEYTBL	CTRL_+KEY_I	,0,key_toggle_past_header_tab
+		KEYTBL	CTRL_+KEY_I	,0,key_toggle_paste_header_tab
 		KEYTBL	CTRL_+KEY_BS	,0,key_toggle_buffering_mode
 		KEYTBL	CTRL_+KEY_CLR	,1,key_clear_buffer
 		KEYTBL	CTRL_+KEY_L	,1,key_redraw_window
@@ -2600,9 +2600,9 @@ nomal_key_table:
 		KEYTBL	KEY_N		,1,key_search_forward_next
 		KEYTBL	KEY_F4		,1,key_search_forward_next
 		KEYTBL	KEY_HELP	,0,key_help
-		KEYTBL	KEY_：		,0,key_toggle_past_header_colon
-		KEYTBL	KEY_－		,0,key_toggle_past_header_hyphen
-		KEYTBL	KEY_TAB		,0,key_toggle_past_header_tab
+		KEYTBL	KEY_：		,0,key_toggle_paste_header_colon
+		KEYTBL	KEY_－		,0,key_toggle_paste_header_hyphen
+		KEYTBL	KEY_TAB		,0,key_toggle_paste_header_tab
 		KEYTBL	KEY_T		,1,key_beginning_of_buffer
 		KEYTBL	KEY_F0		,1,key_beginning_of_buffer
 		KEYTBL	KEY_B		,1,key_end_of_buffer
@@ -2642,7 +2642,7 @@ ctrl_key_table:
 		KEYTBL	KEY_＠		,1,key_write_file
 		KEYTBL	KEY_J		,0,key_help
 		KEYTBL	KEY_］		,0,key_help
-		KEYTBL	KEY_I		,0,key_toggle_past_header_tab
+		KEYTBL	KEY_I		,0,key_toggle_paste_header_tab
 		KEYTBL	KEY_Y		,1,key_insert_file
 		KEYTBL	KEY_Q		,0,key_toggle_text_mode
 		KEYTBL	KEY_＾		,1,key_search_forward_current_word
@@ -2655,26 +2655,26 @@ shift_key_table:
 		KEYTBL	KEY_F3		,1,key_search_backward
 		KEYTBL	KEY_F4		,1,key_search_backward_next
 		KEYTBL	KEY_N		,1,key_search_backward_next
-		KEYTBL	KEY_．		,0,key_toggle_past_header_bracket
+		KEYTBL	KEY_．		,0,key_toggle_paste_header_bracket
 		KEYTBL	KEY_7		,1,key_jump_label
 		KEYTBL_END
 
 		.endif
 
 * ペーストヘッダ変更
-key_toggle_past_header_tab:
+key_toggle_paste_header_tab:
 		moveq	#TAB,d0
 		bra	@f
-key_toggle_past_header_hyphen:
+key_toggle_paste_header_hyphen:
 		moveq	#'-',d0
 		bra	@f
-key_toggle_past_header_colon:
+key_toggle_paste_header_colon:
 		moveq	#':',d0
 		bra	@f
-key_toggle_past_header_bracket:
-		move.b	(default_past_header,pc),d0
+key_toggle_paste_header_bracket:
+		move.b	(default_paste_header,pc),d0
 @@:
-		lea	(past_header,pc),a0
+		lea	(paste_header,pc),a0
 		cmp.b	(a0),d0
 		bne	@f
 		moveq	#0,d0			既に設定されていたら取り消し
@@ -3468,10 +3468,10 @@ readline_yank_current_word:
 		bmi	key_kill_condrv
 
 		moveq	#GETSMAX,d2
-		lea	(RL_PASTBUF,pc),a2
+		lea	(RL_PASTEBUF,pc),a2
 		bsr	yank_current_word_sub
-		lea	(RL_PASTBUF,pc),a0
-		move.l	a0,(past_pointer-RL_PASTBUF,a0)
+		lea	(RL_PASTEBUF,pc),a0
+		move.l	a0,(paste_pointer-RL_PASTEBUF,a0)
 search_forward_end:
 		rts
 
@@ -3891,15 +3891,15 @@ yank_and_kill_condrv:
 yank_sub:
 		lea	(bitflag,pc),a0
 		bset	#AFTERCR_bit,(a0)	改行直後フラグを立ててペースト位置を先頭にする
-		move.l	(pastbuf_adr,pc),(past_pointer-bitflag,a0)
+		move.l	(pastebuf_adr,pc),(paste_pointer-bitflag,a0)
 		rts
 
 key_yank_current_word:
 		bsr	get_cursor_line_buffer
 		bmi	key_kill_condrv
 
-		movem.l	(pastbuf_size,pc),d2/a2
-*		movea.l	(pastbuf_adr,pc),a2
+		movem.l	(pastebuf_size,pc),d2/a2
+*		movea.l	(pastebuf_adr,pc),a2
 		bsr	yank_current_word_sub
 		bra	yank_and_kill_condrv
 
@@ -4011,8 +4011,8 @@ key_copy_region:
 		.endif
 
 kill_region_start:
-		movem.l	(pastbuf_size,pc),d1/a2
-*		movea.l	(pastbuf_adr,pc),a2
+		movem.l	(pastebuf_size,pc),d1/a2
+*		movea.l	(pastebuf_adr,pc),a2
 		subq.l	#1,d1
 kill_region_loop:
 		cmp	d0,d2
@@ -4045,7 +4045,7 @@ key_kill_from_beginning_of_line:
 
 kill_from_beginning_of_line_sub:
 		bsr	get_cursor_line_buffer
-		bmi	kill_cansel
+		bmi	kill_cancel
 
 		movea.l	a1,a0			;行頭
 		adda	(cursorXbyte,pc),a1
@@ -4071,7 +4071,7 @@ kill_from_beginning_of_line_sub:
 		EndChk	a0
 		moveq	#0,d0
 		bra	kill_region_start
-kill_cansel:
+kill_cancel:
 		addq.l	#8,sp
 		rts
 
@@ -4087,15 +4087,15 @@ key_kill_to_end_of_line:
 
 kill_to_end_of_line_sub:
 		bsr	get_cursor_line_buffer
-		bmi	kill_cansel
+		bmi	kill_cancel
 
 		moveq	#0,d3
 		move.b	(a1)+,d3
 		move	(cursorXbyte,pc),d1
 		adda	d1,a1
 		EndChk2	a1
-		movem.l	(pastbuf_size,pc),d2/a2
-*		movea.l	(pastbuf_adr,pc),a2
+		movem.l	(pastebuf_size,pc),d2/a2
+*		movea.l	(pastebuf_adr,pc),a2
 		subq.l	#1,d2
 kill_to_end_of_line_loop:
 		cmp	d1,d3
@@ -4118,10 +4118,10 @@ kill_to_end_of_line_loop:
 		subq.l	#1,d2
 		bne	kill_to_end_of_line_loop
 set_nulstr_yankptr:
-		movea.l	(pastbuf_adr,pc),a1
+		movea.l	(pastebuf_adr,pc),a1
 		bsr	cut_tail_mb_high
 		clr.b	(a2)
-		lea	(past_pointer,pc),a1
+		lea	(paste_pointer,pc),a1
 		move.l	a2,(a1)
 		rts
 
@@ -4731,7 +4731,7 @@ key_help:
 		movea.l	(sp)+,a0
 		bsr	reset_line_address_buf_2
 		bsr	draw_backscroll
-		bra	initialize_keypast_buffer
+		bra	initialize_keypaste_buffer
 **		rts
 
 
@@ -4790,7 +4790,7 @@ key_tag_jump:
 
 		lea	(general_work,pc),a0
 		bclr	#AFTERCR_bit,(bitflag-general_work,a0)	;ペーストヘッダ抑制
-		move.l	a0,(past_pointer-general_work,a0)
+		move.l	a0,(paste_pointer-general_work,a0)
 		addq.l	#4,sp
 
 		bra	key_next_line		;カーソルを次の行に進める
@@ -5961,7 +5961,7 @@ double_check_ok:
 		move.l	a3,(DEVIO_ENDADR,a5)
 		movea.l	(DEVIO_ARGUMENT,a5),a2
 		bsr	option_check
-		bsr	initialize_keypast_buffer
+		bsr	initialize_keypaste_buffer
 
 		lea	(hook_table_top,pc),a0	各種ベクタフック
 		move.l	(buffer_size,pc),d0
@@ -6020,13 +6020,13 @@ hook_loop_start:
 
 		lea	(initmes4,pc),a1	キーボードバッファ～
 		jsr	(a3)
-		move.l	(pastbuf_adr,pc),d1
+		move.l	(pastebuf_adr,pc),d1
 		bsr	print_hexadecimal
 
 *		move	#'-',(sp)
 		DOS	_PUTCHAR
 
-		move.l	(pastbuf_size,pc),d1
+		move.l	(pastebuf_size,pc),d1
 		bsr	print_kiro_decimal
 
 		lea	(initmes5,pc),a1	～確保しました
@@ -6151,12 +6151,12 @@ option_v:
 		bra	next_option
 
 option_h:
-		lea	(default_past_header,pc),a0
+		lea	(default_paste_header,pc),a0
 		move.b	(a2)+,d0
 		beq	@f			省略した場合は最初から>が設定されている
 		move.b	d0,(a0)
 @@:
-		move.b	(a0),(past_header-option_flag,a6)
+		move.b	(a0),(paste_header-option_flag,a6)
 		bra	option_end
 
 option_o:
@@ -6258,7 +6258,7 @@ option_k:
 		suba.l	a3,a0			a3 = デバイスドライバの末尾
 		cmpa.l	#$80000,a0
 		bcs	@f
-		add.l	d1,(pastbuf_size-option_flag,a6)
+		add.l	d1,(pastebuf_size-option_flag,a6)
 		add.l	d1,(DEVIO_ENDADR,a5)
 @@:
 		bra	next_option
@@ -6499,7 +6499,7 @@ window_line:	.dc	28			;バックスクロールウィンドウの行数-1
 
 putbuf_column:	.dc.b	WIDTH			;バッファ書込桁数
 
-default_past_header:
+default_paste_header:
 		.dc.b	'>'
 option_f_col:	.dc.b	3			;IOCS _B_PUTMES の色
 option_o_flag:	.dc.b	2
@@ -6699,7 +6699,7 @@ ctype_table:	.ds.b	256
 
 sys_stat_prtbuf:
 		.ds.b	1			'!'表示用バッファ
-past_header:
+paste_header:
 		.ds.b	1
 search_string_buf:
 		.ds.b	GETSMAX+1		検索文字列バッファ
@@ -6803,11 +6803,11 @@ option_ne_flag:	.ds.b	1
 option_nt_flag:	.ds.b	1
 
 		.quad
-past_pointer:
+paste_pointer:
 		.ds.l	1		ペースト位置
 backscroll_buf_adr:
 		.ds.l	1		バッファ先頭アドレス
-keypast_buffer:
+keypaste_buffer:
 		.ds.b	KBbuf_Default
 
 end_:

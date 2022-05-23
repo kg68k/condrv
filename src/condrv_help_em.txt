@@ -78,5 +78,5 @@
   C-x C-m		toggle-text-mode
   M-i			toggle-tab-disp
   M-*			toggle-cr-disp
-  tab, >, :, -		toggle-past-header
+  tab, >, :, -		toggle-paste-header
 
