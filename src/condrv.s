@@ -4,7 +4,7 @@
 
 VERSION:	.reg	'1.09c+15'
 VERSION_ID:	.equ	'e15 '
-DATE:		.reg	'2022-05-20'
+DATE:		.reg	'2022-05-24'
 AUTHOR:		.reg	'TcbnErik'
 
 
@@ -1036,8 +1036,6 @@ call_orig_b_keyinp:
 
 * IOCS _B_KEYSNS ------------------------------ *
 
-__FAST_PAST:	.equ	0			* 1:一回で64bytes転送する
-
 iocs_b_keysns:
 		movea.l	(past_pointer,pc),a0
 		moveq	#0,d0
@@ -1082,11 +1080,7 @@ past_one_more_char:
 		move	d1,(a1)
 		addq	#1,(a2)+
 		move.l	a1,(a2)
-
-		.if	__FAST_PAST
-		subq.l	#1,a0
-		.endif
-		bra	past_char_next
+		bra	past_char_end
 
 past_without_header:
 		move.l	a0,(past_pointer)
@@ -1096,7 +1090,7 @@ past_without_header:
 		beq	@f
 
 		btst.b	#IS_HEX_bit,(a3,d0.w)	0-9A-Fa-fか？
-		beq	past_char_next
+		beq	past_char_end
 @@:
 		move	d0,(a1)
 		addq	#1,(a2)+
@@ -1105,7 +1099,7 @@ past_without_header:
 		tst.b	(a3,d0.w)
 		bpl	@f			1バイト文字か？
 		tst	d2
-		bne	past_char_next
+		bne	past_char_end
 
 		moveq	#-1,d2
 		move.b	(a0)+,d0		２バイト目を処理
@@ -1113,18 +1107,8 @@ past_without_header:
 		bra	past_char_end
 @@:
 		cmpi.b	#CR,d0
-		bne	past_char_next
+		bne	past_char_end
 		bset	#AFTERCR_bit,(bitflag)
-past_char_next:
-		.if	__FAST_PAST
-
-		cmpi	#64-1,-(a2)		* 一気に転送すると取りこぼす？
-		bhi	@f			* バッファが満杯
-
-		move.b	(a0)+,d0		次の文字
-		bne	past_one_more_char
-@@:
-		.endif
 past_char_end:
 		move	(sp)+,sr
 		POP	usereg			* ペーストしたらキーチェックは不要
