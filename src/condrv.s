@@ -62,12 +62,19 @@ TEXTSAVESIZE:	.equ	128*16*2		桁*ライン*面
 IOBUFSIZE:	.equ	TEXTSAVESIZE
 
 ;ctype_table
-IS_MB_bit:	.equ	7
-IS_HEX_bit:	.equ	6
-IS_DEC_bit:	.equ	5
-IS_MULTIBYTE:	.equ	1<<IS_MB_bit
-IS_HEXNUMBER:	.equ	1<<IS_HEX_bit
-IS_DECIMAL:	.equ	1<<IS_DEC_bit
+IS_MB_bit:	.equ	7			;2バイト文字の上位バイト
+IS_HEX_bit:	.equ	6			;16進数 0-9A-Fa-f
+IS_DEC_bit:	.equ	5			;10進数 0-9
+
+BRA_IF_SB:	.macro	ea,label
+		tst.b	ea			;btst #IS_MB_bit,ea
+		bpl	label
+		.endm
+
+BRA_IF_MB:	.macro	ea,label
+		tst.b	ea			;btst #IS_MB_bit,ea
+		bmi	label
+		.endm
 
 CTRL:		.equ	-$40
 
@@ -373,8 +380,7 @@ xcon_output_mb2:
 		bra	xcon_output_next
 
 xcon_output_plain:
-		tst.b	(a2~ctype,d1~char_code.w)
-		bmi	xcon_output_mb1		;2バイト文字の上位バイト
+		BRA_IF_MB (a2~ctype,d1~char_code.w),xcon_output_mb1	;2バイト文字の上位バイト
 		cmpi.b	#ESC,d1~char_code
 		beq	xcon_output_esc0
 xcon_output_putchar:
@@ -556,8 +562,7 @@ putbuf_force:
 		move	d1~char,-(sp)
 		move.b	(sp)+,d3~temp		;上位byte
 		beq	putbuf_1byte
-		tst.b	(a0~ctype,d3~temp.w)
-		bpl	putbuf_cancel		;上位バイトが不正な値
+		BRA_IF_SB (a0~ctype,d3~temp.w),putbuf_cancel	;上位バイトが不正な値
 		cmpi.b	#$f0,d3~temp
 		bcc	putbuf_2byte_hankaku
 		cmpi.b	#$80,d3~temp
@@ -590,8 +595,7 @@ putbuf_2byte:
 		bra	putbuf_end
 
 putbuf_1byte:
-		tst.b	(a0~ctype,d1~char.w)
-		bmi	putbuf_cancel		;2バイト文字の上位バイトだけは不可
+		BRA_IF_MB (a0~ctype,d1~char.w),putbuf_cancel	;2バイト文字の上位バイトだけは不可
 		cmpi	#$20,d1~char
 		bcs	putbuf_ctrl0~1f		;$00～$1f
 		cmpi	#DEL,d1~char
@@ -1088,16 +1092,14 @@ paste_without_header:
 		bpl	@f
 		LEDbtst	LED_コード
 		beq	@f
-
-		btst.b	#IS_HEX_bit,(a3,d0.w)	0-9A-Fa-fか？
-		beq	paste_char_end
+		btst.b	#IS_HEX_bit,(a3,d0.w)
+		beq	paste_char_end		;16進数文字(0-9A-Fa-f)でなければペーストしない
 @@:
 		move	d0,(a1)
 		addq	#1,(a2)+
 		move.l	a1,(a2)
 
-		tst.b	(a3,d0.w)
-		bpl	@f			1バイト文字か？
+		BRA_IF_SB (a3,d0.w),@f		;1バイト文字
 		tst	d2
 		bne	paste_char_end
 
@@ -3130,8 +3132,7 @@ isearch_next_char:
 		bsr	get_isearch_strlen
 
 		lea	(ctype_table,pc),a2
-		tst.b	(a2,d0.w)		MULTIBYTE
-		bmi	isearch_mb
+		BRA_IF_MB (a2,d0.w),isearch_mb
 * isearch_single_byte_code:
 		tst.b	d0
 		bmi	isearch_sb		半角片仮名
@@ -3305,8 +3306,8 @@ isearch_backspace_b:
 
 		lea	(ctype_table,pc),a1
 @@:
-		tst.b	(a1,d0.w)		MULTIBYTE
-		smi	d1
+		tst.b	(a1,d0.w)		;btst #IS_MB_bit,(a1,d0.w)
+		smi	d1			;sne d1
 		ext	d1			半角=$0000,全角=$ffff
 		suba	d1,a0			全角なら1byte進める
 		move.b	(a0)+,d0
@@ -3487,8 +3488,6 @@ copy_search_str:
 *	a0.l	case_table
 *	a3.l	line_buf
 *	a5.l	(a5):		検索文字列
-*		(GETSMAX+1,a5):	漢字検査テーブル
-KANJITBL	.equ	ctype_table-search_string
 
 make_search_work:
 		lea	(search_string_buf,pc),a1
@@ -3497,23 +3496,22 @@ make_search_work_a1:
 		lea	(line_buf,pc),a3
 		moveq	#0,d0
 		moveq	#0,d7
-		lea	(search_string,pc),a5
-		lea	(a5),a2
+		lea	(ctype_table,pc),a5
+		lea	(search_string,pc),a2
 
 		move.b	(a1)+,d7		最初の１文字
 		beq	make_search_work_end
 		move.b	(a0,d7.w),d7		あらかじめ大文字化しておく
-		tst.b	(KANJITBL,a5,d7.w)
-		bmi	make_search_str_mb_low
+		BRA_IF_MB (a5,d7.w),make_search_str_mb_low
 
 @@:		move.b	(a1)+,d0
-		tst.b	(KANJITBL,a5,d0.w)
-		bmi	make_search_str_mb_high
+		BRA_IF_MB (a5,d0.w),make_search_str_mb_high
 		move.b	(a0,d0.w),(a2)+
 make_search_str_next:
 		bne	@b
 @@:		moveq	#1,d0
 make_search_work_end:
+		lea	(search_string,pc),a5
 		rts
 
 make_search_str_mb_high:
@@ -3528,7 +3526,6 @@ make_search_str_mb_low:
 *	a0.l	case_table
 *	a3.l	line_buf
 *	a5.l	(a5):		検索文字列
-*		(GETSMAX+1,a5):	漢字検査テーブル
 * out	d0.l	0:検索成功 -1:失敗
 * 備考:
 *	i_search_forward_mainでは
@@ -3573,11 +3570,10 @@ search_forward_not_match:
 		beq	search_not_found
 		EndChk	a1
 search_forward_char:
-		tst.b	(KANJITBL,a5,d3.w)	さっき比較したのが全角なら下位バイトを飛ばす
-		bmi	search_forward_skip_lowbyte
-
+		lea	(ctype_table,pc),a2
+		BRA_IF_MB (a2,d3.w),search_forward_skip_lowbyte	;さっき比較したのが2バイト文字なら下位バイトを飛ばす
 		move.b	(a1),d3
-		cmp.b	(a0,d3.w),d7
+		cmp.b	(a0,d3.w),d7		;大文字化(-x 指定時)して比較
 		bne	search_forward_not_match
 		bsr	search_sub
 		bne	search_forward_not_match	注目位置からは一致しない
@@ -3806,7 +3802,7 @@ zenkaku_check_loop:
 search_sub:
 usereg		.reg	d1-d4/a1-a2/a5
 		PUSH	usereg
-		lea	(a5),a2
+		lea	(ctype_table,pc),a2
 		moveq	#0,d0
 search_sub_loop:
 		move	d3,d4			前の比較文字
@@ -3828,9 +3824,8 @@ search_sub_loop:
 		EndChk	a1
 search_sub_cmpchar:
 		move.b	(a1),d0
-		tst.b	(KANJITBL,a2,d4.w)
-		bmi	@f
-		move.b	(a0,d0.w),d0
+		BRA_IF_MB (a2,d4.w),@f
+		move.b	(a0,d0.w),d0		;大文字化(-x オプション指定時)
 @@:		cmp.b	d0,d3
 		beq	search_sub_loop
 search_sub_not_found:
@@ -5736,8 +5731,7 @@ print_m_loop:
 		move.b	(a1)+,d1
 		beq	print_message_end
 		lea	(ctype_table,pc),a2
-		tst.b	(a2,d1.w)	MULTIBYTE
-		bpl	@f		1byte
+		BRA_IF_SB (a2,d1.w),@f
 
 		lsl	#8,d1
 		move.b	(a1)+,d1
@@ -5937,24 +5931,6 @@ double_check_ok:
 		lea	(case_table+256,pc),a0
 		move	#256-1,d0
 @@:		move.b	d0,-(a0)
-		dbra	d0,@b
-
-		lea	(ctype_table+'0',pc),a0
-		moveq	#10-1,d0
-		moveq	#IS_HEXNUMBER+IS_DECIMAL,d1
-@@:		move.b	d1,(a0)+
-		dbra	d0,@b
-		lea	(ctype_table+'A',pc),a0
-		moveq	#6-1,d0
-		moveq	#IS_HEXNUMBER,d1
-@@:		move.b	d1,('a'-'A',a0)
-		move.b	d1,(a0)+
-		dbra	d0,@b
-
-		lea	(ctype_table+$80,pc),a0
-		moveq	#$20-1,d0
-@@:		tas	($e0-$80,a0)		$e0-$ff
-		tas	(a0)+			$80-$9f
 		dbra	d0,@b
 
 		lea	(end_,pc),a3
@@ -6653,6 +6629,19 @@ HOOKTBL:	.macro	funcno,newadr
 		.dc	BASE+.low.funcno*4,newadr-top_
 		.endm
 
+* 文字種テーブル ------------------------------ *
+
+		.quad
+ctype_table:
+i:=0
+		.rept 256
+		v:=  (($80<=i&i<=$9f).or.($e0<=i&i<=$ff))&1<<IS_MB_bit
+		v:=v|(('0'<=i&i<='9').or.('A'<=i&i<='F').or.('a'<=i&i<='f'))&1<<IS_HEX_bit
+		v:=v|('0'<=i&i<='9')&1<<IS_DEC_bit
+		.dc.b v
+		i:=i+1
+		.endm
+
 * ベクタを変更するリスト ---------------------- *
 * 使用後はロングワードで元のアドレスを待避
 		.quad
@@ -6695,7 +6684,6 @@ fnckey_buf:
 line_store_buf:	.ds.b	TEXTSAVESIZE	行入力時の元のテキスト保存バッファ
 case_table:	.ds.b	256		半角小文字->大文字変換テーブル
 search_string:	.ds.b	GETSMAX+1	大文字化した検索文字列(2文字目以降)
-ctype_table:	.ds.b	256
 
 sys_stat_prtbuf:
 		.ds.b	1			'!'表示用バッファ
