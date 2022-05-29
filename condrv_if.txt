@@ -86,30 +86,30 @@ IOCS _KEY_INIT のベクタ-4のアドレスのデータが'hmk*'であれば CO
 <○>:  公開ワーク
 <×>:非公開ワーク
 
-offset	size
- 0(-28)	1.b	<×>起動時のオプション(bit7=1:-j、bit0=1:-f)
+offset  size
+ 0(-28) 1.b     <×>起動時のオプション(bit7=1:-j、bit0=1:-f)
                     (bit1=1:BG 対応/sleep モード、xcont で使用するので変更禁止)
- 1(-27)	1.b	<×>未使用
- 2(-26)	1.w	<×>未使用(オリジナルではペーストのカウンタ)
- 4(-24)	1.w	<×>〃	  (〃		 ペーストのカウンタ初期値)
- 6(-22)	1.l	<○>システムコールのアドレス
-10(-18)	1.b	<○>空文字列(オリジナルでは非公開、未使用)
-11(-17)	1.b	<○>キー操作抑制フラグ(ユーザプログラムで変更可能)
-12(-16)	1.l	<○>バッファ書き込みルーチンのアドレス
-16(-12)	1.l	<○>ペーストバッファのサイズ
-20( -8)	1.l	<○>ペーストバッファのアドレス
-24( -4)	1.l	<○>識別子'hmk*'
-28(  0)	---	IOCS _KEY_INIT の処理ルーチン
+ 1(-27) 1.b     <×>未使用
+ 2(-26) 1.w     <×>未使用(オリジナルではペーストのカウンタ)
+ 4(-24) 1.w     <×>〃     (〃            ペーストのカウンタ初期値)
+ 6(-22) 1.l     <○>システムコールのアドレス
+10(-18) 1.b     <○>空文字列(オリジナルでは非公開、未使用)
+11(-17) 1.b     <○>キー操作抑制フラグ(ユーザプログラムで変更可能)
+12(-16) 1.l     <○>バッファ書き込みルーチンのアドレス
+16(-12) 1.l     <○>ペーストバッファのサイズ
+20( -8) 1.l     <○>ペーストバッファのアドレス
+24( -4) 1.l     <○>識別子'hmk*'
+28(  0) ---     IOCS _KEY_INIT の処理ルーチン
 
 「空文字列」は常に 0(NUL)で、ペーストバッファ書き込み時に一時的に
 ペースト開始アドレスとして設定しておく為に用意されている.
 
 また、ペーストバッファのアドレス-8からの4バイトも公開されている。
 
-offset	size
-0(-8)	1.l	<○>ペースト開始アドレス(ユーザプログラムで変更可能)
-4(-4)	1.l	<×>バックログバッファのアドレス
-8( 0)	?.b	ペーストバッファ(ユーザプログラムで書き込み可能)
+offset  size
+0(-8)   1.l     <○>ペースト開始アドレス(ユーザプログラムで変更可能)
+4(-4)   1.l     <×>バックログバッファのアドレス
+8( 0)   ?.b     ペーストバッファ(ユーザプログラムで書き込み可能)
 
 なお、バックログバッファのアドレスから計算した値でバッファの初期化を行っては
 ならない。内部ワークの初期化も必要で、無理に初期化すると最悪の場合暴走する。
@@ -118,28 +118,28 @@ offset	size
 * Condrv System Call Sample $0020 ------------ *
 
         ....
-        lea	(new_iocs_key_init,pc),a1
-        moveq	#$20,d0
-        jsr	(a0)				System Call
-        lea	(orig_iocs_key_init,pc),a1
-        move.l	d0,(a1)
+        lea     (new_iocs_key_init,pc),a1
+        moveq   #$20,d0
+        jsr     (a0)                            System Call
+        lea     (orig_iocs_key_init,pc),a1
+        move.l  d0,(a1)
         ....
 
-CHK_0	.macro
-        .local	skip
-        bne	skip
-        addq.l	#4,sp
+CHK_0   .macro
+        .local  skip
+        bne     skip
+        addq.l  #4,sp
 skip:
         .endm
 
 new_iocs_key_init:
-        .ifdef	TYPE1 : 新しい処理を行ってから元の処理を行う場合
-                move.l	(orig_iocs_key_init,pc),-(sp)
+        .ifdef  TYPE1 : 新しい処理を行ってから元の処理を行う場合
+                move.l  (orig_iocs_key_init,pc),-(sp)
                 CHK_0
-                bra	new_iocs_key_init_main
-        .else	TYPE2 : 元の処理を行ってから新しい処理を行う場合
-                pea	(new_iocs_key_init_main,pc)
-                move.l	(orig_iocs_key_init,pc),-(sp)
+                bra     new_iocs_key_init_main
+        .else   TYPE2 : 元の処理を行ってから新しい処理を行う場合
+                pea     (new_iocs_key_init_main,pc)
+                move.l  (orig_iocs_key_init,pc),-(sp)
                 CHK_0
                 rts
         .endif
@@ -148,7 +148,7 @@ new_iocs_key_init_main:
         rts
 
 orig_iocs_key_init:
-        .dc.l	0
+        .dc.l   0
 
 * CONDRV.SYS 自体は TYPE1 です。
 * CHK_0 マクロは安全の為に一応記述してありますが、別に入れなくてもいいです。
@@ -157,17 +157,17 @@ orig_iocs_key_init:
 * Condrv System Call Sample $0021/$0022 ------ *
 
         ....
-        moveq	#$22,d0
-        jsr	(a0)				System Call
-        lea	(new_iocs_key_init,pc),a1
-        cmpa.l	d0,a1
-        bne	restor_error
+        moveq   #$22,d0
+        jsr     (a0)                            System Call
+        lea     (new_iocs_key_init,pc),a1
+        cmpa.l  d0,a1
+        bne     restor_error
 
-*	lea	(new_iocs_key_init,pc),a1
-        movea.l	(orig_iocs_key_init,pc),a2
-        moveq	#$21,d0
-        jsr	(a0)				System Call
-*	bmi	restor_error
+*       lea     (new_iocs_key_init,pc),a1
+        movea.l (orig_iocs_key_init,pc),a2
+        moveq   #$21,d0
+        jsr     (a0)                            System Call
+*       bmi     restor_error
         ....
 
 * -------------------------------------------- *
