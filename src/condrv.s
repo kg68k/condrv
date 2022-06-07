@@ -60,11 +60,13 @@ KBbuf_Default:	.equ	1024
 BLINKCYCLE:	.equ	50
 TEXTSAVESIZE:	.equ	128*16*2		桁*ライン*面
 IOBUFSIZE:	.equ	TEXTSAVESIZE
+CTRL:		.equ	-$40
 
 ;ctype_table
 IS_MB_bit:	.equ	7			;2バイト文字の上位バイト
 IS_HEX_bit:	.equ	6			;16進数 0-9A-Fa-f
 IS_DEC_bit:	.equ	5			;10進数 0-9
+IS_UPPER_bit:	.equ	4			;英大文字 A-Z
 
 BRA_IF_SB:	.macro	ea,label
 		tst.b	ea			;btst #IS_MB_bit,ea
@@ -75,8 +77,6 @@ BRA_IF_MB:	.macro	ea,label
 		tst.b	ea			;btst #IS_MB_bit,ea
 		bmi	label
 		.endm
-
-CTRL:		.equ	-$40
 
 
 * Instruction Code ---------------------------- *
@@ -3334,23 +3334,17 @@ isearch_ctrl_f:
 		move.b	(a1),d1			;行のバイト数
 
 		movea.l	d0,a1
-		lea	(case_table,pc),a2
-pickup_char_loop:
-		bsr	get_char
+		lea	(ctype_table,pc),a2
 		moveq	#0,d4
+pickup_char_loop:
 		move.b	(a0)+,d4
+		beq	pickup_char_exec	;検索文字列の末尾に到達した
+		BRA_IF_SB (a2,d4.w),@f
+		move.b	(a0)+,d4		;2バイト文字
 		beq	pickup_char_exec
-		tst	d0
-		bmi	pickup_char_cmp_mb
+@@:
+		bsr	get_char		;検索文字列に対応するバッファ上の文字を読み飛ばす
 
-		move.b	(a2,d4.w),d4		-x オプションによっては大文字小文字を
-		cmp.b	(a2,d0.w),d4		同一視して比較する
-		bra	@f
-pickup_char_cmp_mb:
-		lsl	#8,d4			2bytes文字
-		move.b	(a0)+,d4
-		cmp	d0,d4			;1998/02/28 この比較は不要になったと
-@@:		bne	isearch_bell		;思うが、一応残しておく
 		cmp	d1,d2
 		bne	pickup_char_loop
 
@@ -3371,10 +3365,11 @@ pickup_char_cur:
 		move.b	(a1)+,d1		;注目行の文字数
 		adda	d3,a1
 		EndChk	a1
+pickup_char_exec:
 		bsr	get_char
 		tst	d0
 		beq	isearch_bell
-pickup_char_exec:
+
 		movea.l	(isch_strptr,sp),a0
 		bsr	get_isearch_strlen
 		tst	d0
@@ -3484,48 +3479,46 @@ copy_search_str:
 		rts
 
 * in	a1.l	検索文字列
-* out	d7.l	最初の1バイト(2バイト文字の場合は上位バイトのみ)
-*	a0.l	case_table
+* out	a0.l	ctype_table
 *	a3.l	line_buf
-*	a5.l	(a5):		検索文字列
+*	a5.l	search_string 検索文字列(-x 指定時は小文字化してある)
 
 make_search_work:
 		lea	(search_string_buf,pc),a1
 make_search_work_a1:
-		lea	(case_table,pc),a0
-		lea	(line_buf,pc),a3
-		moveq	#0,d0
-		moveq	#0,d7
-		lea	(ctype_table,pc),a5
+		lea	(ctype_table,pc),a0
 		lea	(search_string,pc),a2
 
-		move.b	(a1)+,d7		最初の１文字
-		beq	make_search_work_end
-		move.b	(a0,d7.w),d7		あらかじめ大文字化しておく
-		BRA_IF_MB (a5,d7.w),make_search_str_mb_low
-
-@@:		move.b	(a1)+,d0
-		BRA_IF_MB (a5,d0.w),make_search_str_mb_high
-		move.b	(a0,d0.w),(a2)+
-make_search_str_next:
-		bne	@b
-@@:		moveq	#1,d0
+		move.b	(option_x_flag,pc),d0
+		bne	@f
+		STRCPY	a1,a2
+		bra	make_search_work_end
+@@:
+		moveq	#0,d0
+1:
+		move.b	(a1)+,d0
+		move.b	(a0,d0.w),d1		;btst #IS_MB_bit,(a0,d0.w)
+		bpl	2f
+		move.b	d0,(a2)+
+		move.b	(a1)+,d0
+		bra	@f
+2:
+		btst	#IS_UPPER_bit,d1
+		beq	@f
+		ori.b	#$20,d0
+@@:
+		move.b	d0,(a2)+
+		bne	1b
 make_search_work_end:
+		lea	(line_buf,pc),a3
 		lea	(search_string,pc),a5
+		tst.b	(a5)
 		rts
 
-make_search_str_mb_high:
-		move.b	d0,(a2)+
-		beq	@b
-make_search_str_mb_low:
-		move.b	(a1)+,(a2)+		下位バイト(大文字化しない)
-		bra	make_search_str_next
-
 * ↓検索メイン処理
-* in	d7.l	最初の1バイト(2バイト文字の場合は上位バイトのみ)
-*	a0.l	case_table
+* in	a0.l	ctype_table
 *	a3.l	line_buf
-*	a5.l	(a5):		検索文字列
+*	a5.l	検索文字列(-x 指定時は小文字化しておくこと)
 * out	d0.l	0:検索成功 -1:失敗
 * 備考:
 *	i_search_forward_mainでは
@@ -3533,29 +3526,35 @@ make_search_str_mb_low:
 *	失敗すればsearch_char_adrがクリアされる.
 
 i_search_forward_main:
-		not.l	d7			;上位ワードが負なら遂次検索モード
-		not	d7
+		moveq	#-1,d7			;遂次検索モード
 		bsr	get_isearch_start
 		bne	@f
+		bra	1f
 search_forward_main:
+		moveq	#0,d7			;通常検索モード
+1:
 		bsr	search_sub_getcur
 		bmi	search_not_found
 @@:
 		tst.b	(a1)
 		beq	search_not_found
 
-		.ifdef	__EMACS
-		bclr	#ISEARCH_bit,(bitflag-case_table,a0)
+		move.b	(a5)+,d7		;先頭の1バイト
+		moveq	#0,d5
+		tst.b	(option_x_flag-ctype_table,a0)
 		beq	@f
-
-		subq.l	#1,a1
-		subq	#1,d2
+		moveq	#$20,d5
 @@:
+		.ifdef	__EMACS
+		moveq	#0,d3
+		bclr	#ISEARCH_bit,(bitflag-ctype_table,a0)
+		bne	search_forward_char
 		.endif
+;次の文字から調べる
 search_forward_skip_lowbyte:
 		moveq	#0,d3
 search_forward_not_match:
-		addq.l	#1,a1			;次の文字から調べる
+		addq.l	#1,a1
 		EndChk	a1
 		addq	#1,d2
 		cmp	d1,d2			;桁数
@@ -3570,10 +3569,13 @@ search_forward_not_match:
 		beq	search_not_found
 		EndChk	a1
 search_forward_char:
-		lea	(ctype_table,pc),a2
-		BRA_IF_MB (a2,d3.w),search_forward_skip_lowbyte	;さっき比較したのが2バイト文字なら下位バイトを飛ばす
+		BRA_IF_MB (a0,d3.w),search_forward_skip_lowbyte	;さっき比較したのが2バイト文字なら下位バイトを飛ばす
 		move.b	(a1),d3
-		cmp.b	(a0,d3.w),d7		;大文字化(-x 指定時)して比較
+		btst	#IS_UPPER_bit,(a0,d3.w)
+		beq	@f
+		or.b	d5,d3
+@@:
+		cmp.b	d3,d7
 		bne	search_forward_not_match
 		bsr	search_sub
 		bne	search_forward_not_match	注目位置からは一致しない
@@ -3584,10 +3586,10 @@ search_forward_char:
 		move	d3,(a2)+		;search_x
 		move	d2,(a2)+		;search_xbyte
 
-;i-searchならカーソルは検索文字列の末尾に移動する
 		tst.l	d7
 		bpl	isearch_move_skip
 
+;i-searchならカーソルは検索文字列の末尾に移動する
 		lea	(-1,a1),a2
 		suba	d2,a2
 		TopChk	a2
@@ -3727,11 +3729,9 @@ key_search_backward_next:
 		bra	search_found_or_not
 
 * ↑検索メイン処理
-* in	d7.l	最初の1バイト(2バイト文字の場合は上位バイトのみ)
-*	a0.l	case_table
+* in	a0.l	ctype_table
 *	a3.l	line_buf
-*	a5.l	(a5):		検索文字列
-*		(GETSMAX+1,a5):	漢字検査テーブル
+*	a5.l	検索文字列(-x 指定時は小文字化しておくこと)
 * out	d0.l	0:検索成功 -1:失敗
 * 備考:
 *	i_search_backward_mainでは
@@ -3745,15 +3745,17 @@ search_backward_main:
 		bsr	search_sub_getcur
 		bmi	search_not_found
 @@:
-		.ifdef	__EMACS
-		bclr	#ISEARCH_bit,(bitflag-case_table,a0)
+		move.b	(a5)+,d7		;先頭の1バイト
+		moveq	#0,d5
+		tst.b	(option_x_flag-ctype_table,a0)
 		beq	@f
-
-		addq.l	#1,a1			;後で1～2を引くので上限検査は不要
-		addq	#1,d2
+		moveq	#$20,d5
 @@:
-		.endif
 		moveq	#0,d3
+		.ifdef	__EMACS
+		bclr	#ISEARCH_bit,(bitflag-ctype_table,a0)
+		bne	search_backward_char
+		.endif
 search_backward_not_match:
 		subq.b	#1,d2
 		bpl	search_backward_cmp
@@ -3769,9 +3771,13 @@ search_not_found:
 search_backward_cmp:
 		subq.l	#1,a1
 		TopChk	a1
-
+search_backward_char:
 		move.b	(a1),d3
-		cmp.b	(a0,d3.w),d7
+		btst	#IS_UPPER_bit,(a0,d3.w)
+		beq	@f
+		or.b	d5,d3
+@@:
+		cmp.b	d3,d7
 		bne	search_backward_not_match
 		bsr	search_sub
 		bne	search_backward_not_match
@@ -3802,10 +3808,10 @@ zenkaku_check_loop:
 		rts
 
 * 検索サブ(2文字目以降を比較する)
+* in	d5.b	-x指定時は$20、そうでなければ$00
 search_sub:
-usereg		.reg	d1-d4/a1-a2/a5
+usereg		.reg	d1-d4/a1/a5
 		PUSH	usereg
-		lea	(ctype_table,pc),a2
 		moveq	#0,d0
 search_sub_loop:
 		move	d3,d4			前の比較文字
@@ -3827,8 +3833,10 @@ search_sub_loop:
 		EndChk	a1
 search_sub_cmpchar:
 		move.b	(a1),d0
-		BRA_IF_MB (a2,d4.w),@f
-		move.b	(a0,d0.w),d0		;大文字化(-x オプション指定時)
+		BRA_IF_MB (a0,d4.w),@f		;2バイト文字の下位バイト
+		btst	#IS_UPPER_bit,(a0,d0.w)
+		beq	@f
+		or.b	d5,d0			;-x指定時はA-Zを小文字化
 @@:		cmp.b	d0,d3
 		beq	search_sub_loop
 search_sub_not_found:
@@ -5311,12 +5319,8 @@ toggle_option_nc_loop:
 		rts
 
 toggle_buffer_mode_x:
-		lea	(case_table+'a',pc),a0	X:検索時の大文字小文字の区別ON/OFF切り換え
-		not.b	(option_x_flag-(case_table+'a'),a0)
-
-		moveq	#'z'-'a',d0
-1:		eori.b	#$20,(a0)+
-		dbra	d0,1b
+		lea	(option_x_flag,pc),a0	;X:検索時の大文字小文字の区別ON/OFF切り換え
+		not.b	(a0)
 		rts
 
 * Shift + Q : 設定変更その２(-m?)
@@ -5929,12 +5933,6 @@ usereg		.reg	d1-d7/a0-a3/a6
 		bmi	print_error_and_return
 double_check_ok:
 		lea	(option_flag,pc),a6
-
-*各種テーブルの初期化
-		lea	(case_table+256,pc),a0
-		move	#256-1,d0
-@@:		move.b	d0,-(a0)
-		dbra	d0,@b
 
 		lea	(end_,pc),a3
 		move.l	a3,(DEVIO_ENDADR,a5)
@@ -6641,6 +6639,7 @@ i:=0
 		v:=  (($80<=i&i<=$9f).or.($e0<=i&i<=$ff))&1<<IS_MB_bit
 		v:=v|(('0'<=i&i<='9').or.('A'<=i&i<='F').or.('a'<=i&i<='f'))&1<<IS_HEX_bit
 		v:=v|('0'<=i&i<='9')&1<<IS_DEC_bit
+		v:=v|('A'<=i&i<='Z')&1<<IS_UPPER_bit
 		.dc.b v
 		i:=i+1
 		.endm
@@ -6685,8 +6684,7 @@ mes_end_adr:	.ds.l	1
 io_buffer:
 fnckey_buf:
 line_store_buf:	.ds.b	TEXTSAVESIZE	行入力時の元のテキスト保存バッファ
-case_table:	.ds.b	256		半角小文字->大文字変換テーブル
-search_string:	.ds.b	GETSMAX+1	大文字化した検索文字列(2文字目以降)
+search_string:	.ds.b	GETSMAX+1	小文字した検索文字列
 
 sys_stat_prtbuf:
 		.ds.b	1			'!'表示用バッファ
