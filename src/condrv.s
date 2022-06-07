@@ -4,7 +4,7 @@
 
 VERSION:	.reg	'1.09c+15'
 VERSION_ID:	.equ	'e15 '
-DATE:		.reg	'2022-05-24'
+DATE:		.reg	'2022-06-08'
 AUTHOR:		.reg	'TcbnErik'
 
 
@@ -3596,6 +3596,9 @@ isearch_move_loop:
 		bsr	get_char		;一文字分カーソルを進める
 		cmp	d1,d2
 		bne	@f
+
+		tst.b	(a1)
+		beq	isearch_move_skip	;バッファ末尾なら次の行には行かない
 
 		addq.l	#1,a1
 		EndChk	a1
