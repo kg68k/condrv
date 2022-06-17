@@ -4,7 +4,7 @@
 
 VERSION:	.reg	'1.09c+15'
 VERSION_ID:	.equ	'e15 '
-DATE:		.reg	'2022-06-08'
+DATE:		.reg	'2022-06-18'
 AUTHOR:		.reg	'TcbnErik'
 
 
@@ -5466,8 +5466,8 @@ get_char:
 		moveq	#0,d0
 		move.b	(a1)+,d0
 		beq	get_char_endofbuf
-		addq	#1,d2
 		EndChk	a1
+		addq	#1,d2
 		tst.b	d0
 		bpl	get_char_1byte		;ASCII
 		cmpi.b	#$a0,d0
@@ -5475,39 +5475,32 @@ get_char:
 		cmpi.b	#$e0,d0
 		bcs	get_char_1byte		;1byte Kana
 get_char_2byte:
-		lsl	#8,d0
-		addq	#1,d2
+		move.b	d0,-(sp)
+		move	(sp)+,d0
 		move.b	(a1)+,d0
+		bne	@f
 
 * 二バイト文字の上位バイトだけがバッファ末尾に入っていた場合
 * の暴走対策. 通常は有り得ないが、一応念の為.
-		bne	@f
 		lsr	#8,d0
-		subq	#1,d2
-		bra	get_char_1byte
+get_char_endofbuf:
+		subq.l	#1,a1
+		rts
 @@:
 		EndChk	a1
+		addq	#1,d2
 get_char_1byte:
 		cmpi	#TAB,d0
 		bne	@f
 		ori	#7,d3
 @@:
 		addq	#1,d3
-		cmpi	#$8140,d0
-		bcs	@f
-		cmpi	#$8540,d0
-		bcs	get_char_wide		8140～853fまで全角
-		cmpi	#$869f,d0
-		bcs	@f
+		cmpi	#$8100,d0
+		bcs	@f			;1バイト文字、2バイト半角($80xx)
 		cmpi	#$f000,d0
-		bcc	@f
-get_char_wide:
-		addq	#1,d3			869f～efffまで全角
+		bcc	@f			;2バイト半角($f0xx-$f5xx)
+		addq	#1,d3			;2バイト全角
 @@:		rts
-
-get_char_endofbuf:
-		subq.l	#1,a1
-		rts
 
 * ラスタコピー呼び出し ------------------------ *
 * break d0-d2
