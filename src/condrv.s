@@ -4,7 +4,7 @@
 
 VERSION:	.reg	'1.09c+15'
 VERSION_ID:	.equ	'e15 '
-DATE:		.reg	'2022-06-18'
+DATE:		.reg	'2022-06-19'
 AUTHOR:		.reg	'TcbnErik'
 
 
@@ -112,6 +112,7 @@ TXADR:		.equ	$944
 TXSTOFST:	.equ	$948
 CSRXMAX:	.equ	$970
 CSRX:		.equ	$974
+ESCEXVECT:	.equ	$97e
 FIRSTBYTE:	.equ	$990
 TXCOLOR:	.equ	$994
 TXUSEMD:	.equ	$9dd
@@ -930,7 +931,7 @@ dos_conctrl_getfncmode:
 		bsr	set_funcdisp_flag
 		bra	display_system_status
 
-set_funcdisp_flag
+set_funcdisp_flag:
 usereg		.reg	d0-d1/a0
 		PUSH	usereg
 		lea	(bitflag,pc),a0
@@ -947,6 +948,46 @@ usereg		.reg	d0-d1/a0
 call_original_dos_conctrl:
 		move.l	(conctrl_orig,pc),-(sp)
 		rts
+
+;拡張エスケープシーケンス
+;  in a0.l ESCシーケンス文字列(ESC の次の文字から)
+;
+;  Human68kが設定する拡張エスケープシーケンス処理(v3.02の場合 L00fb7c)は
+;  DOS _CONCTRLの内部ルーチン(L00fce6)を直接呼び出すためDOS _CONCTRLの
+;  フックではファンクションキー状態の変更を感知できない。
+;  よって、拡張エスケープシーケンス処理をフックすることにより対処する。
+esc_seq_ex:
+		PUSH	a0-a1
+		movea.l	(escex_orig,pc),a1	;0はありえない(0の場合はフックしない)ので考慮不要
+		jsr	(a1)
+		POP	a0-a1
+
+		cmpi.b	#'[',(a0)+
+		bne	escseqex_end
+		cmpi.b	#'>',(a0)+
+		bne	escseqex_end
+		cmpi.b	#'1',(a0)+
+		bne	escseqex_end
+
+		cmpi.b	#'h',(a0)
+		beq	escseqex_1h
+		cmpi.b	#'l',(a0)
+		beq	escseqex_1l
+escseqex_end:
+		rts
+
+;ESC [>1h ... ファンクションキー消去
+;  元ルーチンによって消去されているので、フラグ設定だけでよい
+escseqex_1h:
+		moveq	#3,d0
+		bra	set_funcdisp_flag
+
+;ESC [>1l ... ファンクションキー表示
+;  元ルーチンによって描画されているので、システムステータスも描画する
+escseqex_1l:
+		moveq	#0,d0
+		bsr	set_funcdisp_flag
+		bra	display_system_status
 
 * Condrv Official Work ------------------------ *
 
@@ -5933,31 +5974,15 @@ double_check_ok:
 		bsr	option_check
 		bsr	initialize_keypaste_buffer
 
-		lea	(hook_table_top,pc),a0	各種ベクタフック
 		move.l	(buffer_size,pc),d0
-		bne	hook_loop_start		OK
-
-		lea	(no_buf_err_mes,pc),a2	* -b が指定されなかった場合は常駐しない
+		bne	@f
+		lea	(no_buf_err_mes,pc),a2	;バッファサイズ(-b)未指定またはメモリ不足
 		move.b	(no_mem_flag,pc),d0
-		beq	print_error_and_return
-		lea	(no_mem_err_mes,pc),a2	* メモリが足りない場合
-print_error_and_return:
-		bsr	print_title
-		lea	(a2),a1
-		jsr	(a3)
-		move	#$700d,d0		エラーの場合はこの値を返すらしい
-		bra	devini_exit
-
-hook_loop:
-		movea	d0,a1
-		move.l	(a0),d0
-		move.l	(a1),(a0)+		現在の処理アドレスを保存
-		lea	(top_,pc),a2
-		adda	d0,a2
-		move.l	a2,(a1)			新しい処理アドレスを設定
-hook_loop_start:
-		move	(a0),d0
-		bne	hook_loop
+		beq	1f
+		lea	(no_mem_err_mes,pc),a2
+1:		bra	print_error_and_return
+@@:
+		bsr	hook_vectors
 
 * 改行せずにリセットで再起動した場合でも、タイトルの前に一行空くようにする.
 		movea.l	(backscroll_buf_adr,pc),a0
@@ -6016,6 +6041,13 @@ devini_exit:
 		POP	usereg
 		rts
 
+print_error_and_return:
+		bsr	print_title
+		lea	(a2),a1
+		jsr	(a3)
+		move	#$700d,d0		エラーの場合はこの値を返すらしい
+		bra	devini_exit
+
 print_title:
 		lea	(title_mes,pc),a1
 		lea	(@f,pc),a3
@@ -6026,32 +6058,55 @@ print_title:
 @@:
 		rts
 
+;各種ベクタフック
+;  ESCEXVECT($97e)は Human68k が拡張エスケープシーケンス( [6n、[>1h、[>1l )の処理を設定している。
+;  ただし、ROM IOCS の仕様上は未設定の場合がありえるので念のため考慮しておく。Human68k が
+;  [>1h、[>1l を処理しないなら condrv 側の対応も不要なので、未設定の場合は処理をフックしない。
+hook_vectors:
+		lea	(hook_table_top,pc),a0
+		bra	hook_vec_start
+hook_vec_next:
+		movea	d0,a1			;ベクタアドレス
+		move.l	(a0),d0			;d0.w=処理アドレスへのオフセット
+		move.l	(a1),(a0)+		;現在の処理アドレスを保存
+		beq	@f			;処理アドレス未設定なら変更しない
+
+		lea	(top_,pc),a2
+		adda	d0,a2
+		move.l	a2,(a1)			;新しい処理アドレスを設定
+@@:
+hook_vec_start:
+		move	(a0),d0
+		bne	hook_vec_next
 option_end:
+		rts
+
+option_nextstr:
 		movea.l	(sp)+,a2
 option_check:
 		tst.b	(a2)+
 		bne	option_check		自分のファイル名or今見た引数
 		move.b	(a2)+,d0
-		beq	@b			0,0 で終わり
+		beq	option_end		;0,0 で終わり
 		move.l	a2,-(sp)
 		cmpi.b	#'-',d0
-		bne	option_end
-next_option:
+		bne	option_nextstr
+option_nextchar:
 		move.b	(a2)+,d0
-		beq	option_end
+		beq	option_nextstr
 		ori.b	#$20,d0
 		lea	(option_tbl,pc),a0
 @@:
 		move.l	(a0)+,d1
-		beq	option_end		未定義のオプション
+		beq	option_nextstr		未定義のオプション
 		cmp.b	d0,d1
 		bne	@b
 		swap	d1
 		adda	d1,a0
 		jmp	(a0)
 *引数を持たないオプションは続けて書くことができるように、分岐後は
-*正常な引数			bra	next_option
-*異常〃(次の引数まで無視)	bra	option_end
+*正常な引数			bra	option_nextchar
+*異常〃(次の引数まで無視)	bra	option_nextstr
 
 option_tbl:
 		.irpc	%a,abcfghjkmnoprstvwx
@@ -6070,22 +6125,22 @@ option_t:
 		bra	@f
 @@:
 		not.b	(a0)
-		bra	next_option
+		bra	option_nextchar
 
 option_x:
 		bsr	toggle_buffer_mode_x
-		bra	next_option
+		bra	option_nextchar
 
 option_m:
 		lea	(option_m_flag,pc),a0
 		bsr	get_value
 		bmi	@b			数値省略時は反転
 		move.b	d1,(a0)
-		bra	next_option
+		bra	option_nextchar
 
 option_n:
 		move.b	(a2)+,d0
-		beq	option_end
+		beq	option_nextstr
 		ori.b	#$20,d0
 		lea	(option_n_list,pc),a0
 
@@ -6118,7 +6173,7 @@ option_v:
 @@:
 		lea	(dummy_rte,pc),a1
 		move.l	a1,(a0)
-		bra	next_option
+		bra	option_nextchar
 
 option_h:
 		lea	(default_paste_header,pc),a0
@@ -6127,7 +6182,7 @@ option_h:
 		move.b	d0,(a0)
 @@:
 		move.b	(a0),(paste_header-option_flag,a6)
-		bra	option_end
+		bra	option_nextstr
 
 option_o:
 		moveq	#$20,d0
@@ -6141,11 +6196,11 @@ option_o:
 		bne	@f
 
 		move.b	d1,(option_o_flag-option_flag,a6)
-@@:		bra	option_end
+@@:		bra	option_nextstr
 
 option_c:
 		bsr	toggle_buffering_mode
-		bra	next_option
+		bra	option_nextchar
 
 option_f:
 		moveq	#OPT_F_bit,d2
@@ -6168,7 +6223,7 @@ option_s:
 		bra	option_flag_chg
 option_flag_chg:
 		bchg	d2,(a6)
-@@:		bra	next_option
+@@:		bra	option_nextchar
 
 option_b:
 		cmpi.b	#'#',(a2)
@@ -6180,7 +6235,7 @@ option_b:
 		bmi	@f			;無指定
 		move.l	(buffer_size,pc),d0
 @@:
-		bne	next_option		;指定済み
+		bne	option_nextchar		;指定済み
 
 		mulu	#1024,d1		KB単位
 		movea.l	($1c00),a0		メインメモリ末尾
@@ -6212,7 +6267,7 @@ buffer_clear_start:
 		bset	#BUFINIT_bit,(bitflag-option_flag,a6)
 @@:
 		move.l	(buffer_now,a0),(line_buf-option_flag,a6)
-		bra	next_option
+		bra	option_nextchar
 
 option_k:
 		bsr	get_value
@@ -6231,7 +6286,7 @@ option_k:
 		add.l	d1,(pastebuf_size-option_flag,a6)
 		add.l	d1,(DEVIO_ENDADR,a5)
 @@:
-		bra	next_option
+		bra	option_nextchar
 
 option_w:
 		bsr	get_value		開始位置
@@ -6267,7 +6322,7 @@ option_w_loop:
 @@:
 		dbra	d1,option_w_loop
 option_w_end:
-		bra	next_option
+		bra	option_nextchar
 
 print_hexadecimal:
 		lea	(str_buf,pc),a1
@@ -6619,10 +6674,6 @@ help_buf_struct:
 		.dc.l	help_mes_end+1		バッファ末尾+1
 *		.ds.l	2
 
-HOOKTBL:	.macro	funcno,newadr
-		.dc	BASE+.low.funcno*4,newadr-top_
-		.endm
-
 * 文字種テーブル ------------------------------ *
 
 		.quad
@@ -6639,21 +6690,31 @@ i:=0
 
 * ベクタを変更するリスト ---------------------- *
 * 使用後はロングワードで元のアドレスを待避
+
+HOOKTBL:	.macro	vecadr,newadr
+		.dc	vecadr,newadr-top_
+		.endm
+HOOKTBL_IOCS:	.macro	funcno,newadr
+		HOOKTBL	$400+funcno*4,newadr
+		.endm
+HOOKTBL_DOS:	.macro	funcno,newadr
+		HOOKTBL	$1800+.low.funcno*4,newadr
+		.endm
+
 		.quad
 hook_table_top:
+b_keyinp_orig:	HOOKTBL_IOCS _B_KEYINP,	iocs_b_keyinp
+b_keysns_orig:	HOOKTBL_IOCS _B_KEYSNS,	iocs_b_keysns
+key_init_orig:	HOOKTBL_IOCS _KEY_INIT,	iocs_key_init
+b_putc_orig:	HOOKTBL_IOCS _B_PUTC,	iocs_b_putc
+b_print_orig:	HOOKTBL_IOCS _B_PRINT,	iocs_b_print
+txrascpy_orig:	HOOKTBL_IOCS _TXRASCPY,	iocs_txrascpy
 
-BASE:		.set	$400
-b_keyinp_orig:	HOOKTBL	_B_KEYINP	,iocs_b_keyinp
-b_keysns_orig:	HOOKTBL	_B_KEYSNS	,iocs_b_keysns
-key_init_orig:	HOOKTBL	_KEY_INIT	,iocs_key_init
-b_putc_orig:	HOOKTBL	_B_PUTC		,iocs_b_putc
-b_print_orig:	HOOKTBL	_B_PRINT	,iocs_b_print
-txrascpy_orig:	HOOKTBL	_TXRASCPY	,iocs_txrascpy
+hendsp_orig:	HOOKTBL_DOS _HENDSP,	dos_hendsp
+fnckey_orig:	HOOKTBL_DOS _FNCKEY,	dos_fnckey
+conctrl_orig:	HOOKTBL_DOS _CONCTRL,	dos_conctrl
 
-BASE:		.set	$1800
-hendsp_orig:	HOOKTBL	_HENDSP		,dos_hendsp
-fnckey_orig:	HOOKTBL	_FNCKEY		,dos_fnckey
-conctrl_orig:	HOOKTBL	_CONCTRL	,dos_conctrl
+escex_orig:	HOOKTBL ESCEXVECT,	esc_seq_ex
 
 		.dc	0		* end of table
 
