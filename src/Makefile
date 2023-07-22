@@ -4,7 +4,7 @@ ifeq ($(notdir $(CURDIR)),src)
 $(error do not execute make in src directory)
 endif
 
-AS	= has
+AS	= has060
 ASFLAGS	= -c4
 LD	= hlk
 CC	= gcc2
