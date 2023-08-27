@@ -11,7 +11,7 @@ BLD_DIR = build
 SRCS = $(wildcard $(SRC_DIR)/*)
 SJ_SRCS = $(subst $(SRC_DIR)/,$(BLD_DIR)/,$(SRCS))
 
-DOCS = bg.txt condrv.txt condrv_if.txt
+DOCS = bg.txt condrv.txt condrv_if.txt CHANGELOG.txt
 SJ_DOCS = $(addprefix $(BLD_DIR)/,$(DOCS))
 
 
@@ -24,6 +24,8 @@ directories: $(BLD_DIR)
 $(BLD_DIR):
 	$(MKDIR_P) $@
 
+$(BLD_DIR)/CHANGELOG.txt: CHANGELOG.md
+	$(U8TOSJ) < $^ >! $@
 
 $(BLD_DIR)/%.txt: %.txt
 	$(U8TOSJ) < $^ >! $@

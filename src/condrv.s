@@ -2,9 +2,9 @@
 	.title	condrv(em).sys based on Console driver Type-D for X68000 version 1.09c
 
 
-VERSION:	.reg	'1.09c+15'
-VERSION_ID:	.equ	'e15 '
-DATE:		.reg	'2022-06-19'
+VERSION:	.reg	'1.09c+16'
+VERSION_ID:	.equ	'e16 '
+DATE:		.reg	'2023-08-27'
 AUTHOR:		.reg	'TcbnErik'
 
 
@@ -1306,7 +1306,7 @@ direct_key_clear:
 
 * 指定行(d0.w)を描画
 draw_line_d0:
-usereg		.reg	d1/a1-a2		d0 も破壊しないこと
+usereg		.reg	d1/a0-a2		d0 も破壊しないこと
 		PUSH	usereg
 		lea	(line_buf,pc),a3
 		moveq	#0,d1
@@ -1318,7 +1318,8 @@ usereg		.reg	d1/a1-a2		d0 も破壊しないこと
 		lsr.l	#5,d1
 		movea.l	(text_address,pc),a2
 		adda.l	d1,a2			指定行のアドレス
-		bsr	draw_line
+		lea	(draw_line,pc),a0
+		bsr	without_text_assist
 		POP	usereg
 		rts
 
@@ -1859,6 +1860,22 @@ fill_line_address_buf:
 		rts
 
 draw_backscroll:
+		lea	(draw_backscroll_inner,pc),a0
+		bra	without_text_assist
+*		rts
+
+
+* テキスト画面のアクセスマスク、同時アクセスを無効にして
+* コールバック処理を呼び出す
+* in	a0.l	コールバック処理
+without_text_assist:
+		move	(CRTC_R21),-(sp)
+		move	#$0000,(CRTC_R21)
+		jsr	(a0)
+		move	(sp)+,(CRTC_R21)
+		rts
+
+draw_backscroll_inner:
 		lea	(line_buf,pc),a0
 		movea.l	(text_address,pc),a2
 		move	(window_line,pc),d2
@@ -2067,16 +2084,22 @@ fill_text_block:
 		dbra	d0,@b
 		rts
 
+
 * 上端と下端の横線を描く ---------------------- *
 
 draw_window:
 usereg:		.reg	a0-a3
 		PUSH	usereg
-		bsr	clear_text_plane	;バックログ画面塗りつぶし
-		bsr	draw_window_tipline	;上端と下端の横線を描く
-		bsr	draw_window_title
+		lea	(draw_window_inner,pc),a0
+		bsr	without_text_assist
 		POP	usereg
 		rts
+
+draw_window_inner:
+		bsr	clear_text_plane	;バックログ画面塗りつぶし
+		bsr	draw_window_tipline	;上端と下端の横線を描く
+		bra	draw_window_title
+*		rts
 
 draw_window_tipline:
 		bsr	get_window_bottom_tvram
@@ -5998,10 +6021,7 @@ double_check_ok:
 		lea	(initmes1,pc),a1	バックスクロールバッファ～
 		jsr	(a3)
 		move.l	($1c00),d1		バッファ先頭アドレス
-		bsr	print_hexadecimal
-
-		move	#'-',-(sp)
-		DOS	_PUTCHAR
+		bsr	print_hex_hyphen
 
 		moveq	#32,d1
 		add.l	(buffer_size,pc),d1
@@ -6016,10 +6036,7 @@ double_check_ok:
 		lea	(initmes4,pc),a1	キーボードバッファ～
 		jsr	(a3)
 		move.l	(pastebuf_adr,pc),d1
-		bsr	print_hexadecimal
-
-*		move	#'-',(sp)
-		DOS	_PUTCHAR
+		bsr	print_hex_hyphen
 
 		move.l	(pastebuf_size,pc),d1
 		bsr	print_kiro_decimal
@@ -6029,7 +6046,7 @@ double_check_ok:
 
 		move.l	#$e_ffff,-(sp)		! 表示
 		DOS	_CONCTRL
-		addq.l	#4+2,sp
+		addq.l	#4,sp
 
 		move.b	(option_o_flag,pc),d1
 		subq.b	#3,d1			OPT.2
@@ -6048,6 +6065,8 @@ print_error_and_return:
 		move	#$700d,d0		エラーの場合はこの値を返すらしい
 		bra	devini_exit
 
+;タイトル表示
+;out	a3.l	DOS _PRINT ルーチンのアドレス
 print_title:
 		lea	(title_mes,pc),a1
 		lea	(@f,pc),a3
@@ -6055,7 +6074,6 @@ print_title:
 		move.l	a1,-(sp)
 		DOS	_PRINT
 		addq.l	#4,sp
-@@:
 		rts
 
 ;各種ベクタフック
@@ -6324,8 +6342,9 @@ option_w_loop:
 option_w_end:
 		bra	option_nextchar
 
-print_hexadecimal:
+print_hex_hyphen:
 		lea	(str_buf,pc),a1
+		move.b	#'-',-(a1)
 print_hex_loop:
 		moveq	#$f,d0
 		and	d1,d0
@@ -6396,22 +6415,22 @@ command_exec:
 title_mes:
 		.dc.b	CR,LF
 		.dc.b	'Console driver version ',VERSION,KEYBIND_TYPE
-		.dc.b	' / Copyright 1990 卑弥呼☆, ',DATE,' ',AUTHOR,'.',CR,LF
+		.dc.b	' / Copyright 1990 卑弥呼☆, ',DATE,' ',AUTHOR,CR,LF
 str_buf:	.dc.b	0
 xcon_filename:	.dc.b	'XCON',0
 
 double_include_err_mes:
-		.dc.b	'ドライバは既に登録されています.',CR,LF,0
+		.dc.b	'ドライバは既に登録されています。',CR,LF,0
 no_buf_err_mes:
-		.dc.b	'バックスクロールバッファの容量が指定されていません.',CR,LF,0
+		.dc.b	'バックスクロールバッファの容量が指定されていません。',CR,LF,0
 no_mem_err_mes:
-		.dc.b	'メモリが足りません.',CR,LF,0
+		.dc.b	'メモリが足りません。',CR,LF,0
 
 initmes1:	.dc.b	'バックスクロールバッファ($',0
-initmes2:	.dc.b	'KB)は初期化しません.',CR,LF,0
-initmes3:	.dc.b	'KB)を初期化しました.',CR,LF,0
+initmes2:	.dc.b	'KB)は初期化しません。',CR,LF,0
+initmes3:	.dc.b	'KB)を初期化しました。',CR,LF,0
 initmes4:	.dc.b	'キーボードバッファ($',0
-initmes5:	.dc.b	'KB)を確保しました.',CR,LF,0
+initmes5:	.dc.b	'KB)を確保しました。',CR,LF,0
 
 option_o_list:	.dc.b	'21cs'
 option_n_list:	.dc.b	'bcet'
