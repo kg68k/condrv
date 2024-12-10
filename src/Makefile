@@ -4,28 +4,29 @@ ifeq ($(notdir $(CURDIR)),src)
 $(error do not execute make in src directory)
 endif
 
-AS	= has060
-ASFLAGS	= -c4
-LD	= hlk
-CC	= gcc2
-CFLAGS	= -O2
-SHELL	= fish
+AS = has060
+ASFLAGS = -w2 -c3
+LD ?= hlk
+CC = gcc2
+CFLAGS = -O2
+SHELL = fish
 
-EDFLAGS	=
-EMFLAGS	= -s__EMACS -s__EM_FONT_CR -s__BUF_POS -s__TAG_JMP
-#	  -s__XCONC -s__UPPER -s__BUF_POS -s__TAG_JMP
-#	  -s__EM_FONT_TAB -s__EM_FONT_CR -s__EM_FONT
+EDFLAGS =
+EMFLAGS = -s__EMACS -s__EM_FONT_CR -s__BUF_POS -s__TAG_JMP
+# -s__XCONC -s__UPPER -s__BUF_POS -s__TAG_JMP
+# -s__EM_FONT_TAB -s__EM_FONT_CR -s__EM_FONT
 
-SRCS	= condrv.s condrv_help.txt condrv_help_em.txt dumphelp.c gm_internal.mac
-DOCS	= bg.txt condrv.txt condrv_if.txt CHANGELOG.txt
+SRCS = condrv.s condrv_help.txt condrv_help_em.txt dumphelp.c gm_internal.mac
+DOCS = bg.txt condrv.txt condrv_if.txt CHANGELOG.txt
 
-MKHELP	= dumphelp.x
+MKHELP = dumphelp.x
 
-COND_ZIP = cond_e.zip
-ARCS	= $(COND_ZIP)
+TARGETS = condrv.sys condrvem.sys
 
 
-all: condrv.sys condrvem.sys
+.PHONY: all archive
+
+all: $(TARGETS)
 
 condrv.sys: condrv.o
 	$(LD) -o $@ $^
@@ -51,9 +52,13 @@ $(MKHELP): dumphelp.c
 	$(CC) $(CFLAGS) -o $@ $^
 
 
-$(COND_ZIP): $(DOCS) condrv.sys condrvem.sys
-	rm -f $@
-	zip -9 $@ $^
+PKGTMP = pkgtmp
+
+$(PKGTMP):
+	mkdir $@
+
+archive: $(PKGTMP) $(TARGETS)
+	make -C $(PKGTMP) -f ../Package.mk
 
 
 # EOF

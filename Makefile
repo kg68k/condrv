@@ -1,42 +1,52 @@
-# Makefile for condrv(em).sys (convert source code from UTF-8 to Shift_JIS)
+# Makefile to convert UTF-8 source files to Shift_JIS.
 #   Do not use non-ASCII characters in this file.
 
-MKDIR_P = mkdir -p
+MKDIR = mkdir
 U8TOSJ = u8tosj
 
+SRCDIR_MK = srcdir.mk
 SRC_DIR = src
+-include $(SRCDIR_MK)
+
 BLD_DIR = build
 
+dots = $(wildcard $(foreach w,. */. */*/. */*/*/.,$(1)/$(w)))
 
-SRCS = $(wildcard $(SRC_DIR)/*)
-SJ_SRCS = $(subst $(SRC_DIR)/,$(BLD_DIR)/,$(SRCS))
+SRC_DIRS = $(sort $(dir $(call dots,$(SRC_DIR))))
+BLD_DIRS = $(subst $(SRC_DIR)/,$(BLD_DIR)/,$(SRC_DIRS))
 
-DOCS = bg.txt condrv.txt condrv_if.txt CHANGELOG.txt
-SJ_DOCS = $(addprefix $(BLD_DIR)/,$(DOCS))
+SRCS = $(filter-out $(SRC_DIRS:%/=%),$(wildcard $(SRC_DIRS:%=%*)))
+SJ_SRCS = $(subst $(SRC_DIR),$(BLD_DIR),$(SRCS))
 
 
-.PHONY: all directories clean
+.PHONY: all directories srcdir_mk clean
 
-all: directories $(SJ_DOCS) $(SJ_SRCS)
+all: directories $(SJ_SRCS)
 
-directories: $(BLD_DIR)
+directories: $(BLD_DIRS)
 
-$(BLD_DIR):
-	$(MKDIR_P) $@
-
-$(BLD_DIR)/CHANGELOG.txt: CHANGELOG.md
-	$(U8TOSJ) < $^ >! $@
-
-$(BLD_DIR)/%.txt: %.txt
-	$(U8TOSJ) < $^ >! $@
+$(BLD_DIRS):
+	$(MKDIR) $@
 
 $(BLD_DIR)/%: $(SRC_DIR)/%
 	$(U8TOSJ) < $^ >! $@
 
 
-clean:
-	-rm -f $(SJ_DOCS) $(SJ_SRCS)
-	-rmdir $(BLD_DIR)
+# Do not use $(SRCDIR_MK) as the target name to prevent automatic remaking of the makefile.
+srcdir_mk:
+	rm -f $(SRCDIR_MK)
+	echo "SRC_DIR = $(CURDIR)/src" > $(SRCDIR_MK)
 
+
+REV_BLD_DIRS = \
+	$(foreach depth,3 2 1,\
+		$(foreach dir,$(BLD_DIRS),\
+			$(if $(filter $(depth),$(words $(subst /, ,$(dir)))),$(dir))\
+		)\
+	)
+
+clean:
+	rm -f $(SJ_SRCS)
+	-rmdir $(REV_BLD_DIRS:%/=%)
 
 # EOF

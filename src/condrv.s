@@ -2,9 +2,9 @@
 	.title	condrv(em).sys based on Console driver Type-D for X68000 version 1.09c
 
 
-VERSION:	.reg	'1.09c+16'
-VERSION_ID:	.equ	'e16 '
-DATE:		.reg	'2023-08-27'
+VERSION:	.reg	'+17'
+VERSION_ID:	.equ	'e17 '
+DATE:		.reg	'2024'
 AUTHOR:		.reg	'TcbnErik'
 
 
@@ -43,8 +43,8 @@ KEYBIND_TYPE:	.reg	'[em]'
 
 		.include	macro.mac
 		.include	console.mac
-		.include	dosdef.mac
 		.include	doscall.mac
+		.include	filesys.mac
 		.include	keycode.mac
 		.include	iocscall.mac
 		.include	gm_internal.mac
@@ -2954,14 +2954,14 @@ key_write_file:
 		bsr	check_diskready
 		bmi	disk_notready_error
 
-		move	#1<<ARCHIVE,-(sp)
+		move	#1<<FILEATR_ARCHIVE,-(sp)
 		move.l	a1,-(sp)
 		DOS	_NEWFILE
 		addq.l	#6,sp
 		move.l	d0,d4
 		bpl	write_file_status_check
 
-		move	#WOPEN,-(sp)
+		move	#OPENMODE_WRITE,-(sp)
 		move.l	a1,-(sp)
 		DOS	_OPEN
 		addq.l	#6,sp
@@ -6414,7 +6414,7 @@ command_exec:
 		.even				なるべく上の方に破壊されてもいいものを置く
 title_mes:
 		.dc.b	CR,LF
-		.dc.b	'Console driver version ',VERSION,KEYBIND_TYPE
+		.dc.b	'Console driver version 1.09c',VERSION,KEYBIND_TYPE
 		.dc.b	' / Copyright 1990 卑弥呼☆, ',DATE,' ',AUTHOR,CR,LF
 str_buf:	.dc.b	0
 xcon_filename:	.dc.b	'XCON',0
