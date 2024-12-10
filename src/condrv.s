@@ -905,13 +905,10 @@ usereg		.reg	d0-d4/a1
 		PUSH	usereg
 		lea	(sys_stat_prtbuf,pc),a1
 		move.b	(stop_level_char,pc),d0
-		bne	disp_sys_stat_set	;'1'～'9'
-
 		cmpi	#RTS,(condrv_put_char-sys_stat_prtbuf,a1)
-		sne	d0
-		addi.b	#'!',d0
-		.fail	('!'-1).ne.SPACE
-disp_sys_stat_set:
+		bne	@f
+		moveq	#'!',d0			;バッファリング停止中は!を優先して表示する
+@@:
 		move.b	d0,(a1)
 
 		move.b	(option_f_col,pc),d1	表示属性
@@ -5890,6 +5887,10 @@ syscall_0021:
 		moveq	#0,d0
 		rts
 
+syscall_error2:
+		moveq	#-2,d0
+		rts
+
 syscall_0022:
 		move.l	(key_init_orig,pc),d0
 		rts
@@ -5902,19 +5903,14 @@ syscall_0023:
 		bne	syscall_0023_push
 
 		subq.b	#1,d3
-		bmi	syscall_0023_pop
-syscall_error2:
-		moveq	#-2,d0
-		rts
-syscall_0023_pop:
+		bmi	syscall_error2		;スタックが空なのに POP しようとした
 		move.b	d3,(a0)
-
 		btst	d3,d0
 		sne	d1
 		ext	d1
 		bra	syscall_0000
 syscall_0023_push:
-		cmpi.b	#31,d3
+		cmpi.b	#32,d3
 		beq	syscall_error2		スタックが満杯なのに PUSH しようとした
 		bset	d3,d0
 		lea	(condrv_put_char,pc),a1
@@ -5952,6 +5948,7 @@ syscall_0024_set_char:
 		bls	@f
 		moveq	#'9',d0
 @@:
+		ori.b	#SPACE,d0		;0の場合は空白にする
 		move.b	d0,(stop_level_char-stop_level,a0)
 		bsr	display_system_status
 syscall_0024_get:
@@ -6490,6 +6487,8 @@ toggle_text_mode_mes:
 set_mark_mes:
 		.dc.b	'set-mark.',0
 
+stop_level_char:.dc.b	' '			;' ' or '1'～'9'
+
 
 		.ifndef	__EMACS
 define_label_mes:
@@ -6681,7 +6680,6 @@ help_mes_last_ofst:
 help_mes_last_ptr:
 		.dc.b	0			空行
 help_mes_end:
-*		.dc.b	0			最後の行の長さ その２(なくても平気だろう...
 
 		.quad
 *		.dc.l	'hmk*'			;識別子
@@ -6822,8 +6820,6 @@ search_xbyte:	.ds	1			;行の左端からのバイト数
 last_line_ptr:	.ds.l	1			;&line_buf[last_line]
 last_line_adr:	.ds.l	1			; line_buf[last_line]
 last_line_byte:	.ds.b	1			;*line_buf[last_line]
-
-stop_level_char:.ds.b	1			;0 or '1'～'9'
 
 ;XCON への出力の状態
 		.quad
