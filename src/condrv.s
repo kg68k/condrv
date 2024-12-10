@@ -989,12 +989,12 @@ escseqex_1l:
 * Condrv Official Work ------------------------ *
 
 		.even
+stop_level_max:	.dc	1  ;-g指定時は65535
 stop_level:	.dc	0
 option_flag:
 		.dc.b	0
 OPT_J_bit:	.equ	7 : -j(コード入力時に16進数文字のみペーストする)
 OPT_S_bit:	.equ	3 : -s(EMACS mode でもスクロールを ED 式にする)
-OPT_G_bit:	.equ	2 : -g(stop_level > 0 の時'!'の代わりにその値を表示する)
 OPT_BG_bit:	.equ	1 : BG対応(sleepする - これは-zの筈だった)
 OPT_F_bit:	.equ	0 : -f(!を表示しない)
 		.even
@@ -5930,17 +5930,16 @@ syscall_0024:
 		beq	syscall_0024_get
 		bmi	syscall_0024_minus
 *syscall_0024_plus:
-		cmpi	#$ffff,(a0)
-		beq	syscall_0024_error
-		addq	#1,(a0)
-		bra	syscall_0024_set_char
+  move (a0),d0
+  cmp (stop_level_max,pc),d0
+  bcc syscall_0024_error
+  addq #1,(a0)
+  bra syscall_0024_set_char
 syscall_0024_minus:
 		tst	(a0)
 		beq	syscall_0024_error
 		subq	#1,(a0)
 syscall_0024_set_char:
-		btst	#OPT_G_bit,(option_flag,pc)
-		beq	syscall_0024_get
 		move	(a0),d0			;stop_level 表示用の文字を作成
 		beq	@f
 		addi	#'0',d0
@@ -6233,11 +6232,12 @@ option_f:
 		beq	option_flag_chg		-f0
 
 		move.b	d1,(option_f_col-option_flag,a6)	表示色指定
-		bra	@f
+		bra	option_nextchar
 
 option_g:
-		moveq	#OPT_G_bit,d2
-		bra	option_flag_chg
+  move #65535,(stop_level_max-option_flag,a6)
+  bra option_nextchar
+
 option_j:
 		moveq	#OPT_J_bit,d2
 		bra	option_flag_chg
@@ -6246,7 +6246,7 @@ option_s:
 		bra	option_flag_chg
 option_flag_chg:
 		bchg	d2,(a6)
-@@:		bra	option_nextchar
+		bra	option_nextchar
 
 option_b:
 		cmpi.b	#'#',(a2)
