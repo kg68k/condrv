@@ -6096,6 +6096,17 @@ hook_vec_start:
 option_end:
 		rts
 
+;未割り当てのオプション文字
+option_d:
+option_e:
+option_i:
+option_l:
+option_q:
+option_u:
+option_y:
+option_z:
+  bra option_nextstr
+
 option_nextstr:
 		movea.l	(sp)+,a2
 option_check:
@@ -6107,27 +6118,24 @@ option_check:
 		cmpi.b	#'-',d0
 		bne	option_nextstr
 option_nextchar:
-		move.b	(a2)+,d0
-		beq	option_nextstr
-		ori.b	#$20,d0
-		lea	(option_tbl,pc),a0
-@@:
-		move.l	(a0)+,d1
-		beq	option_nextstr		未定義のオプション
-		cmp.b	d0,d1
-		bne	@b
-		swap	d1
-		adda	d1,a0
-		jmp	(a0)
+  move.b (a2)+,d0
+  andi #$00df,d0
+  subi #'A',d0
+  cmpi #'Z'-'A',d0
+  bhi option_nextstr  ;不正なオプション文字(A-Za-z以外)
+
+  add d0,d0
+  move (option_tbl,pc,d0.w),d0
+  jmp (option_tbl,pc,d0.w)
+
 *引数を持たないオプションは続けて書くことができるように、分岐後は
 *正常な引数			bra	option_nextchar
 *異常〃(次の引数まで無視)	bra	option_nextstr
 
 option_tbl:
-		.irpc	%a,abcfghjkmnoprstvwx
-		.dc	(option_%a-$-4),'&%a'
-		.endm
-		.dc.l	0
+  .irpc	%a,abcdefghijklmnopqrstuvwxyz
+    .dc option_%a-option_tbl
+  .endm
 
 option_p:
 		lea	(option_p_flag,pc),a0
