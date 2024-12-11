@@ -6003,16 +6003,8 @@ double_check_ok:
 @@:
 		bsr	hook_vectors
 
-* 改行せずにリセットで再起動した場合でも、タイトルの前に一行空くようにする.
-		movea.l	(backscroll_buf_adr,pc),a0
-		movea.l	(buffer_now+4,a0),a0
-		tst.b	(a0)
-		beq	@f
-
-		moveq	#LF,d1
-		bsr	condrv_put_char_force
-@@:
-		bsr	print_title
+  bsr prepare_print_title
+  bsr print_title
 
 		lea	(initmes1,pc),a1	バックスクロールバッファ～
 		jsr	(a3)
@@ -6070,7 +6062,39 @@ print_title:
 		move.l	a1,-(sp)
 		DOS	_PRINT
 		addq.l	#4,sp
+prepare_print_title_end:
 		rts
+
+;タイトル表示前の準備
+prepare_print_title:
+  btst #BUFINIT_bit,(bitflag,pc)
+  bne prepare_print_title_end
+
+  ;改行せずにリセットで再起動した場合でも、タイトルの前に一行空くようにする。
+  movea.l (backscroll_buf_adr,pc),a0
+  movea.l (buffer_now+4,a0),a0
+  lea (condrv_put_char_force,pc),a1
+  moveq #0,d0  ;ESCシーケンス中ではない値にしておく
+  tst.b (a0)
+  beq @f
+    bsr writebuf_lf
+  @@:
+
+  ;区切りとして水平線をバッファに記録する
+  bsr writebuf_lf
+  moveq #SPACE,d1
+  jsr (a1)
+  move #'━',d1
+  moveq #(WIDTH-2)/2-1,d2
+  @@:
+    jsr (a1)
+  dbra d2,@b
+  bra writebuf_lf
+
+writebuf_lf:
+  moveq #LF,d1
+  jmp (a1)
+
 
 ;各種ベクタフック
 ;  ESCEXVECT($97e)は Human68k が拡張エスケープシーケンス( [6n、[>1h、[>1l )の処理を設定している。
