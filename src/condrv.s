@@ -6312,8 +6312,11 @@ option_b:
 buffer_clear_start:
 		bsr	initialize_backscroll_buffer
 		bset	#BUFINIT_bit,(bitflag-option_flag,a6)
+		bra	1f			;無効にしたline_bufをbuffer_nowで上書きしないこと
+						;(C-↓で開いたときに異常なログを表示してしまう)
 @@:
 		move.l	(buffer_now,a0),(line_buf-option_flag,a6)
+1:
 		bra	option_nextchar
 
 option_k:
