@@ -6437,8 +6437,6 @@ is_number:
 		moveq	#-1,d0
 		rts
 
-command_exec:
-		DOS	_EXIT
 
 * Data Section -------------------------------- *
 
@@ -6904,7 +6902,8 @@ keypaste_buffer:
 		.ds.b	KBbuf_Default
 
 end_:
-		.end	command_exec
+.end
+
 
 # 公開ワークの構造
 	.dc.b	-j(bit7),-f(bit0) フラグ
